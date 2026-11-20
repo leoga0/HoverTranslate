@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -41,6 +42,7 @@ namespace HoverTranslate
         private bool _selProbeBusy;
         private bool _explainingSelection;
         private DateTime _suppressHoverUntil = DateTime.MinValue;
+        private DateTime _cardShownAt = DateTime.MinValue;
 
         [STAThread]
         public static void Main()
@@ -481,6 +483,7 @@ namespace HoverTranslate
         private void AutoDismissIfFar(POINT p)
         {
             if (!_card.IsVisible) return;
+            if ((DateTime.UtcNow - _cardShownAt).TotalMilliseconds < 1200) return;
             if (_card.ContainsCursor(p.X, p.Y)) return;
 
             long dx = (long)p.X - _lastTrigger.X;
@@ -565,13 +568,14 @@ namespace HoverTranslate
                 return;
             }
 
-            RunTranslate(text, p);
+            RunTranslate(text, p, false);
         }
 
         /// <summary>统一的取词/选区展示流程：先占位，再翻译，最后补术语。</summary>
-        private void RunTranslate(string text, POINT p)
+        private void RunTranslate(string text, POINT p, bool useAi)
         {
             _card.CardAnchor = _cfg.CardAnchor;
+            _cardShownAt = DateTime.UtcNow;
             _card.ShowLoading(text, TargetLabel(), p.X, p.Y, _cfg.ShowOriginal);
 
             int req = _requestId;
@@ -607,6 +611,27 @@ namespace HoverTranslate
                     _card.ShowTerms(m.Terms);
                     ScheduleAutoDim();
                     if (!_cfg.HoverEnabled) AutoHide(2200);
+
+                    // 本地术语库覆盖不到的，联网让模型用大白话讲一遍
+                    if (useAi && m.Terms.Count < 2 && AiExplainer.Available)
+                    {
+                        string probe = text;
+                        ThreadPool.QueueUserWorkItem(delegate
+                        {
+                            List<Terminology.Term> ai = null;
+                            try { ai = AiExplainer.Explain(probe, 2 - m.Terms.Count); }
+                            catch { }
+                            if (ai == null || ai.Count == 0) return;
+
+                            Dispatcher.BeginInvoke(new Action(delegate
+                            {
+                                if (req != _requestId) return;
+                                var merged = new List<Terminology.Term>(m.Terms);
+                                merged.AddRange(ai);
+                                _card.ShowTerms(merged);
+                            }));
+                        });
+                    }
                 }));
             });
         }
@@ -644,9 +669,12 @@ namespace HoverTranslate
             _suppressHoverUntil = DateTime.UtcNow.AddSeconds(2.5);
 
             POINT p = Native.CursorPos();
+            // 锚点跟着本次选区走，否则鼠标一移就被当成「离开取词点」收卡
+            _lastTrigger = p;
+            _cardShownAt = DateTime.UtcNow;
             _card.Tag = text;
             _requestId++;
-            RunTranslate(text, p);
+            RunTranslate(text, p, true);
 
             var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(260) };
             t.Tick += delegate
