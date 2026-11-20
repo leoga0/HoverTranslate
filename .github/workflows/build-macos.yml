@@ -1,0 +1,43 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'mac/**'
+      - '.github/workflows/build-macos.yml'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swiftc --version
+
+      - name: Build app
+        run: |
+          cd mac
+          bash build.sh
+
+      - name: Inspect bundle
+        run: |
+          ls -la mac/build
+          ls -la mac/build/HoverTranslate.app/Contents/MacOS
+          file mac/build/HoverTranslate.app/Contents/MacOS/HoverTranslate
+
+      - name: Package
+        run: |
+          cd mac
+          ditto -c -k --keepParent build/HoverTranslate.app HoverTranslate-macos.zip
+          ls -lh HoverTranslate-macos.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HoverTranslate-macos
+          path: mac/HoverTranslate-macos.zip
+          retention-days: 30
