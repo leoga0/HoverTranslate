@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -25,6 +26,8 @@ namespace HoverTranslate
         private readonly TextBlock _target;
         private readonly TextBlock _footer;
         private readonly Border _divider;
+        private readonly Border _termDivider;
+        private readonly StackPanel _termBox;
         private readonly TextBlock _closeBtn;
         private readonly StackPanel _sourceBox;
         private readonly DispatcherTimer _leaveTimer;
@@ -36,6 +39,8 @@ namespace HoverTranslate
         private string _translated = "";
         private string _original = "";
         private bool _dimmed;
+        private int _wantW = 360;
+        private int _wantH = 60;
 
         public bool IsPinned { get; set; }
         public bool QuietMode { get; set; }
@@ -51,7 +56,9 @@ namespace HoverTranslate
             Topmost = true;
             ShowActivated = false;
             ResizeMode = ResizeMode.NoResize;
-            SizeToContent = SizeToContent.WidthAndHeight;
+            SizeToContent = SizeToContent.Manual;
+            Width = MaxCardWidth;
+            Height = 60;
             WindowStartupLocation = WindowStartupLocation.Manual;
             Opacity = 0;
 
@@ -123,10 +130,22 @@ namespace HoverTranslate
                 Visibility = Visibility.Collapsed
             };
 
+            _termDivider = new Border
+            {
+                Height = 1,
+                Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                Margin = new Thickness(0, 7, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
+
+            _termBox = new StackPanel { Visibility = Visibility.Collapsed };
+
             var stack = new StackPanel();
             stack.Children.Add(head);
             stack.Children.Add(_sourceBox);
             stack.Children.Add(_target);
+            stack.Children.Add(_termDivider);
+            stack.Children.Add(_termBox);
             stack.Children.Add(_footer);
 
             _root = new Border
@@ -203,6 +222,7 @@ namespace HoverTranslate
                 _footer.Foreground = new SolidColorBrush(Color.FromArgb(92, 220, 228, 240));
                 _pair.Foreground = new SolidColorBrush(Color.FromArgb(102, 164, 196, 252));
                 _divider.Background = new SolidColorBrush(Color.FromArgb(22, 255, 255, 255));
+                _termDivider.Background = new SolidColorBrush(Color.FromArgb(18, 255, 255, 255));
                 _closeBtn.Foreground = new SolidColorBrush(Color.FromArgb(64, 255, 255, 255));
             }
             else
@@ -214,6 +234,7 @@ namespace HoverTranslate
                 _footer.Foreground = new SolidColorBrush(Color.FromRgb(150, 156, 168));
                 _pair.Foreground = new SolidColorBrush(Color.FromRgb(60, 110, 190));
                 _divider.Background = new SolidColorBrush(Color.FromArgb(20, 0, 0, 0));
+                _termDivider.Background = new SolidColorBrush(Color.FromArgb(16, 0, 0, 0));
                 _closeBtn.Foreground = new SolidColorBrush(Color.FromArgb(70, 0, 0, 0));
             }
 
@@ -247,6 +268,7 @@ namespace HoverTranslate
                 : new SolidColorBrush(Color.FromRgb(130, 136, 148));
             _footer.Text = "";
             _footer.Visibility = Visibility.Collapsed;
+            ShowTerms(null);
 
             Present();
         }
@@ -297,6 +319,90 @@ namespace HoverTranslate
             Present();
         }
 
+        /// <summary>在译文下方补一段术语解释：先用一句话讲清楚，再打个比方。</summary>
+        public void ShowTerms(List<Terminology.Term> terms)
+        {
+            _termBox.Children.Clear();
+
+            if (terms == null || terms.Count == 0)
+            {
+                _termBox.Visibility = Visibility.Collapsed;
+                _termDivider.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            int shown = 0;
+            foreach (Terminology.Term term in terms)
+            {
+                if (shown >= 2) break;
+
+                var head = new TextBlock
+                {
+                    Text = string.IsNullOrEmpty(term.c) ? term.n : term.n + " · " + term.c,
+                    FontSize = 9.5,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = _dark
+                        ? new SolidColorBrush(Color.FromArgb((byte)(shown == 0 ? 150 : 110), 150, 190, 255))
+                        : new SolidColorBrush(Color.FromArgb((byte)(shown == 0 ? 220 : 160), 40, 90, 170)),
+                    Margin = new Thickness(0, shown == 0 ? 0 : 6, 0, 1)
+                };
+
+                string bodyText = term.d;
+                if (!string.IsNullOrEmpty(term.x)) bodyText += "\n" + term.x;
+
+                var body = new TextBlock
+                {
+                    Text = bodyText,
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = TextMaxWidth,
+                    LineHeight = 16,
+                    Foreground = _dark
+                        ? new SolidColorBrush(Color.FromArgb((byte)(shown == 0 ? 200 : 150), 226, 232, 244))
+                        : new SolidColorBrush(Color.FromArgb((byte)(shown == 0 ? 230 : 180), 52, 56, 66))
+                };
+
+                _termBox.Children.Add(head);
+                _termBox.Children.Add(body);
+                shown++;
+            }
+
+            _termBox.Visibility = Visibility.Visible;
+            _termDivider.Visibility = Visibility.Visible;
+            Relayout();
+        }
+
+        /// <summary>
+        /// 内容变了就重新量一次尺寸并摆位。
+        /// 透明无边框窗口用 WPF 的 Width/Height 改大小并不可靠，这里直接算成物理像素交给 SetWindowPos。
+        /// </summary>
+        private void Relayout()
+        {
+            if (!IsVisible) return;
+
+            // 用卡片最大宽度去量，换行位置才和最终渲染一致；无限宽度量出来会偏矮
+            _root.Measure(new Size(MaxCardWidth, double.PositiveInfinity));
+            _root.Arrange(new Rect(0, 0, _root.DesiredSize.Width, _root.DesiredSize.Height));
+
+            double w = Math.Min(MaxCardWidth, Math.Max(88, Math.Ceiling(_root.DesiredSize.Width) + 2));
+            double h = Math.Max(40, Math.Ceiling(_root.ActualHeight) + 16);
+            if (double.IsNaN(w) || double.IsNaN(h)) return;
+
+            double scale = Native.GetScaleForPoint(_anchorX, _anchorY);
+            if (scale <= 0) scale = 1;
+
+            _wantW = (int)Math.Ceiling(w * scale);
+            _wantH = (int)Math.Ceiling(h * scale);
+
+            Reposition();
+
+            Dispatcher.BeginInvoke(new Action(delegate
+            {
+                if (!IsVisible) return;
+                Reposition();
+            }), DispatcherPriority.Loaded);
+        }
+
         /// <summary>顶部只留「英→中 · 引擎」，把信息压到一行，避免多一行说明文字。</summary>
         private string CompactPair(TranslationResult r)
         {
@@ -315,16 +421,8 @@ namespace HoverTranslate
                 Opacity = 0;
                 Show();
             }
-            UpdateLayout();
-            Reposition();
+            Relayout();
             FadeTo(1.0, 110);
-
-            Dispatcher.BeginInvoke(new Action(delegate
-            {
-                if (!IsVisible) return;
-                UpdateLayout();
-                Reposition();
-            }), DispatcherPriority.Render);
         }
 
         // MARK: - 定位
@@ -338,9 +436,7 @@ namespace HoverTranslate
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd == IntPtr.Zero) return;
 
-            RECT r;
-            if (!Native.GetWindowRect(hwnd, out r)) return;
-            int w = r.Width, h = r.Height;
+            int w = _wantW, h = _wantH;
             if (w <= 0 || h <= 0) return;
 
             System.Drawing.Rectangle scr = System.Windows.Forms.Screen.FromPoint(
@@ -387,8 +483,8 @@ namespace HoverTranslate
             if (y < scr.Top + margin) y = scr.Top + margin;
             if (x < scr.Left + margin) x = scr.Left + margin;
 
-            Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, x, y, 0, 0,
-                Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+            Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, x, y, w, h,
+                Native.SWP_NOACTIVATE);
         }
 
         // MARK: - 显隐与透明度
