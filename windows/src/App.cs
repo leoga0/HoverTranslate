@@ -36,6 +36,11 @@ namespace HoverTranslate
         private POINT _lastTrigger = new POINT(-99999, -99999);
         private bool _busy;
         private int _requestId;
+        private DispatcherTimer _selTimer;
+        private string _lastSelection;
+        private bool _selProbeBusy;
+        private bool _explainingSelection;
+        private DateTime _suppressHoverUntil = DateTime.MinValue;
 
         [STAThread]
         public static void Main()
@@ -87,6 +92,10 @@ namespace HoverTranslate
 
             try { SetupHotkeys(); AppConfig.Log("hotkeys ok"); }
             catch (Exception ex) { AppConfig.Log("hotkeys fail: " + ex.Message + "\n" + ex.StackTrace); }
+
+            _selTimer = new DispatcherTimer(DispatcherPriority.Background);
+            _selTimer.Interval = TimeSpan.FromMilliseconds(450);
+            _selTimer.Tick += OnSelectionSettled;
 
             _timer = new DispatcherTimer(DispatcherPriority.Background);
             _timer.Interval = TimeSpan.FromMilliseconds(110);
@@ -140,6 +149,8 @@ namespace HoverTranslate
             miQuiet.Checked = _cfg.QuietMode;
             var miAutoDim = new Forms.ToolStripMenuItem("闲置自动变淡", null, (s, e) => ToggleAutoDim());
             miAutoDim.Checked = _cfg.AutoDim;
+            var miSel = new Forms.ToolStripMenuItem("选中即解释", null, (s, e) => ToggleSelectionExplain());
+            miSel.Checked = _cfg.SelectionExplain;
             miShowSrc.Checked = _cfg.ShowOriginal;
             themeMenu.DropDownItems.Add(_miDark);
             themeMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
@@ -150,6 +161,7 @@ namespace HoverTranslate
             themeMenu.DropDownItems.Add(miShowSrc);
             themeMenu.DropDownItems.Add(miQuiet);
             themeMenu.DropDownItems.Add(miAutoDim);
+            themeMenu.DropDownItems.Add(miSel);
 
             _miAutoStart = new Forms.ToolStripMenuItem("开机自动启动", null, (s, e) => ToggleAutoStart());
             _miAutoStart.Checked = IsAutoStartEnabled();
@@ -256,6 +268,13 @@ namespace HoverTranslate
             _cfg.Save();
             RefreshCardStyle();
             ShowToast(_cfg.QuietMode ? "低调样式" : "标准样式");
+        }
+
+        private void ToggleSelectionExplain()
+        {
+            _cfg.SelectionExplain = !_cfg.SelectionExplain;
+            _cfg.Save();
+            ShowToast(_cfg.SelectionExplain ? "选中文字就会解释" : "已关闭选中即解释");
         }
 
         private void ToggleAutoDim()
@@ -396,6 +415,23 @@ namespace HoverTranslate
             {
                 _tickCount++;
 
+                // 每 4 个 tick（约 440ms）探一次选区，放后台线程，别卡 UI
+                if (_cfg.SelectionExplain && _tickCount % 4 == 0 && !_selProbeBusy)
+                {
+                    _selProbeBusy = true;
+                    ThreadPool.QueueUserWorkItem(delegate
+                    {
+                        string sel = null;
+                        try { sel = TextGrabber.GetSelectedText(); }
+                        catch { }
+                        Dispatcher.BeginInvoke(new Action(delegate
+                        {
+                            _selProbeBusy = false;
+                            HandleSelectionProbe(sel);
+                        }));
+                    });
+                }
+
                 POINT p = Native.CursorPos();
 
                 if (p.X != _lastPos.X || p.Y != _lastPos.Y)
@@ -409,6 +445,8 @@ namespace HoverTranslate
 
                 if (!_cfg.HoverEnabled) return;
                 if (_busy) return;
+                if (_explainingSelection) return;
+                if (DateTime.UtcNow < _suppressHoverUntil) return;
                 if (_card.IsVisible && _card.ContainsCursor(p.X, p.Y)) return;
 
                 double still = (DateTime.UtcNow - _stillSince).TotalMilliseconds;
@@ -527,6 +565,12 @@ namespace HoverTranslate
                 return;
             }
 
+            RunTranslate(text, p);
+        }
+
+        /// <summary>统一的取词/选区展示流程：先占位，再翻译，最后补术语。</summary>
+        private void RunTranslate(string text, POINT p)
+        {
             _card.CardAnchor = _cfg.CardAnchor;
             _card.ShowLoading(text, TargetLabel(), p.X, p.Y, _cfg.ShowOriginal);
 
@@ -565,6 +609,52 @@ namespace HoverTranslate
                     if (!_cfg.HoverEnabled) AutoHide(2200);
                 }));
             });
+        }
+
+        // ---------- 选中即解释 ----------
+
+        private void HandleSelectionProbe(string sel)
+        {
+            if (sel == _lastSelection) return;
+            _lastSelection = sel;
+
+            if (string.IsNullOrEmpty(sel) || sel.Length < 2 || sel.Length > 80)
+            {
+                _selTimer.Stop();
+                return;
+            }
+
+            _selTimer.Stop();
+            _selTimer.Start();
+        }
+
+        private void OnSelectionSettled(object sender, EventArgs e)
+        {
+            _selTimer.Stop();
+            string text = _lastSelection;
+            if (string.IsNullOrEmpty(text) || text.Length < 2) return;
+            if (_card.IsVisible && _card.Tag as string == text) return;
+            ExplainSelection(text);
+        }
+
+        /// <summary>用户主动选中一段内容，就直接解释，不再走语言门槛。</summary>
+        private void ExplainSelection(string text)
+        {
+            _explainingSelection = true;
+            _suppressHoverUntil = DateTime.UtcNow.AddSeconds(2.5);
+
+            POINT p = Native.CursorPos();
+            _card.Tag = text;
+            _requestId++;
+            RunTranslate(text, p);
+
+            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(260) };
+            t.Tick += delegate
+            {
+                t.Stop();
+                _explainingSelection = false;
+            };
+            t.Start();
         }
 
         /// <summary>结果稳定后把卡片压到背景，避免一直抢注意力；鼠标移上去会恢复。</summary>
