@@ -10,23 +10,36 @@ using System.Windows.Threading;
 
 namespace HoverTranslate
 {
+    /// <summary>
+    /// 译文浮层。
+    /// 设计目标是「存在感足够低」：不挡阅读视线、对比度收敛、闲置时自动退到背景里。
+    /// </summary>
     public class CardWindow : Window
     {
+        private const double MaxCardWidth = 360;
+        private const double TextMaxWidth = 336;
+
         private readonly Border _root;
         private readonly TextBlock _pair;
         private readonly TextBlock _source;
         private readonly TextBlock _target;
         private readonly TextBlock _footer;
+        private readonly Border _divider;
+        private readonly TextBlock _closeBtn;
         private readonly StackPanel _sourceBox;
-        private readonly DispatcherTimer _fadeTimer;
+        private readonly DispatcherTimer _leaveTimer;
+
         private bool _dark = true;
-        private double _fontSize = 15;
+        private double _fontSize = 14;
         private int _anchorX;
         private int _anchorY;
         private string _translated = "";
         private string _original = "";
+        private bool _dimmed;
 
         public bool IsPinned { get; set; }
+        public bool QuietMode { get; set; }
+        public bool HasResult { get; set; }
 
         public CardWindow()
         {
@@ -43,48 +56,51 @@ namespace HoverTranslate
 
             _pair = new TextBlock
             {
-                FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromArgb(180, 255, 255, 255)),
+                FontSize = 10,
+                Foreground = new SolidColorBrush(Color.FromArgb(105, 168, 200, 255)),
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-
-            var closeBtn = new TextBlock
-            {
-                Text = "×",
-                FontSize = 15,
-                Foreground = new SolidColorBrush(Color.FromArgb(150, 255, 255, 255)),
-                Cursor = Cursors.Hand,
-                VerticalAlignment = VerticalAlignment.Center,
-                Padding = new Thickness(4, 0, 0, 4)
-            };
-            closeBtn.MouseLeftButtonDown += (s, e) => { e.Handled = true; HideCard(true); };
-            closeBtn.MouseEnter += (s, e) => { closeBtn.Foreground = new SolidColorBrush(Color.FromArgb(240, 255, 255, 255)); };
-            closeBtn.MouseLeave += (s, e) => { closeBtn.Foreground = new SolidColorBrush(Color.FromArgb(150, 255, 255, 255)); };
-
-            var head = new DockPanel { LastChildFill = false };
-            DockPanel.SetDock(_pair, Dock.Left);
-            head.Children.Add(_pair);
-            head.Children.Add(closeBtn);
-
-            _source = new TextBlock
-            {
-                FontSize = _fontSize - 2,
-                Foreground = new SolidColorBrush(Color.FromArgb(150, 235, 240, 250)),
-                TextWrapping = TextWrapping.Wrap,
-                MaxWidth = 430,
-                LineHeight = (_fontSize - 2) * 1.55,
-                Margin = new Thickness(0, 7, 0, 0),
+                Margin = new Thickness(0, 0, 6, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
 
-            _sourceBox = new StackPanel();
-            _sourceBox.Children.Add(new Border
+            _closeBtn = new TextBlock
+            {
+                Text = "×",
+                FontSize = 13,
+                Foreground = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)),
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+                Padding = new Thickness(3, 0, 0, 3)
+            };
+            _closeBtn.MouseLeftButtonDown += (s, e) => { e.Handled = true; HideCard(true); };
+            _closeBtn.MouseEnter += (s, e) => { _closeBtn.Foreground = new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)); };
+            _closeBtn.MouseLeave += (s, e) => { _closeBtn.Foreground = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)); };
+
+            var head = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 0) };
+            DockPanel.SetDock(_pair, Dock.Left);
+            head.Children.Add(_pair);
+            head.Children.Add(_closeBtn);
+
+            _source = new TextBlock
+            {
+                FontSize = _fontSize - 2.5,
+                Foreground = new SolidColorBrush(Color.FromArgb(120, 230, 236, 248)),
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = TextMaxWidth,
+                LineHeight = (_fontSize - 2.5) * 1.45,
+                Margin = new Thickness(0, 4, 0, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+
+            _divider = new Border
             {
                 Height = 1,
-                Background = new SolidColorBrush(Color.FromArgb(38, 255, 255, 255)),
-                Margin = new Thickness(0, 7, 0, 0)
-            });
+                Background = new SolidColorBrush(Color.FromArgb(26, 255, 255, 255)),
+                Margin = new Thickness(0, 5, 0, 0)
+            };
+
+            _sourceBox = new StackPanel();
+            _sourceBox.Children.Add(_divider);
             _sourceBox.Children.Add(_source);
 
             _target = new TextBlock
@@ -92,17 +108,18 @@ namespace HoverTranslate
                 FontSize = _fontSize,
                 Foreground = Brushes.White,
                 TextWrapping = TextWrapping.Wrap,
-                MaxWidth = 430,
-                LineHeight = _fontSize * 1.6,
-                Margin = new Thickness(0, 8, 0, 0)
+                MaxWidth = TextMaxWidth,
+                LineHeight = _fontSize * 1.5,
+                Margin = new Thickness(0, 5, 0, 0)
             };
 
             _footer = new TextBlock
             {
-                FontSize = 10.5,
-                Foreground = new SolidColorBrush(Color.FromArgb(120, 220, 228, 240)),
-                Margin = new Thickness(0, 8, 0, 0),
-                TextWrapping = TextWrapping.NoWrap
+                FontSize = 9.5,
+                Foreground = new SolidColorBrush(Color.FromArgb(90, 220, 228, 240)),
+                Margin = new Thickness(0, 5, 0, 0),
+                TextWrapping = TextWrapping.NoWrap,
+                Visibility = Visibility.Collapsed
             };
 
             var stack = new StackPanel();
@@ -113,22 +130,22 @@ namespace HoverTranslate
 
             _root = new Border
             {
-                CornerRadius = new CornerRadius(10),
-                Background = new SolidColorBrush(Color.FromArgb(240, 28, 30, 38)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(46, 255, 255, 255)),
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Color.FromArgb(206, 26, 28, 34)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(14, 10, 14, 11),
+                Padding = new Thickness(11, 7, 11, 8),
                 Child = stack,
                 Effect = new DropShadowEffect
                 {
-                    BlurRadius = 18,
-                    ShadowDepth = 3,
+                    BlurRadius = 10,
+                    ShadowDepth = 1,
                     Direction = 270,
-                    Opacity = 0.45,
+                    Opacity = 0.18,
                     Color = Colors.Black
                 },
-                MinWidth = 180,
-                MaxWidth = 470
+                MinWidth = 88,
+                MaxWidth = MaxCardWidth
             };
 
             Content = _root;
@@ -142,54 +159,74 @@ namespace HoverTranslate
                 }
             };
 
-            MouseEnter += (s, e) => { _fadeTimer.Stop(); };
+            MouseRightButtonUp += (s, e) => CopyTarget();
+
+            MouseEnter += (s, e) =>
+            {
+                _leaveTimer.Stop();
+                if (_dimmed) SetDim(false);
+            };
+
             MouseLeave += (s, e) =>
             {
                 if (IsPinned) return;
-                _fadeTimer.Stop();
-                _fadeTimer.Start();
+                _leaveTimer.Stop();
+                _leaveTimer.Start();
             };
-            MouseRightButtonUp += (s, e) => CopyTarget();
 
-            _fadeTimer = new DispatcherTimer();
-            _fadeTimer.Interval = TimeSpan.FromMilliseconds(650);
-            _fadeTimer.Tick += (s, e) =>
+            _leaveTimer = new DispatcherTimer();
+            _leaveTimer.Interval = TimeSpan.FromMilliseconds(900);
+            _leaveTimer.Tick += (s, e) =>
             {
-                _fadeTimer.Stop();
+                _leaveTimer.Stop();
                 if (IsMouseOver) return;
-                HideCard(false);
+                if (HasResult) SetDim(true);
             };
 
             SourceInitialized += (s, e) => Native.ApplyOverlayStyle(this);
         }
 
+        // MARK: - 主题
+
         public void ApplyTheme(bool dark, double fontSize)
         {
             _dark = dark;
             _fontSize = fontSize;
+
             if (dark)
             {
-                _root.Background = new SolidColorBrush(Color.FromArgb(240, 28, 30, 38));
-                _root.BorderBrush = new SolidColorBrush(Color.FromArgb(46, 255, 255, 255));
-                _target.Foreground = Brushes.White;
-                _source.Foreground = new SolidColorBrush(Color.FromArgb(150, 235, 240, 250));
-                _footer.Foreground = new SolidColorBrush(Color.FromArgb(120, 220, 228, 240));
-                _pair.Foreground = new SolidColorBrush(Color.FromArgb(180, 150, 190, 255));
+                _root.Background = new SolidColorBrush(Color.FromArgb(QuietMode ? (byte)196 : (byte)224, 24, 26, 32));
+                _root.BorderBrush = new SolidColorBrush(Color.FromArgb(28, 255, 255, 255));
+                _target.Foreground = new SolidColorBrush(Color.FromArgb(238, 255, 255, 255));
+                _source.Foreground = new SolidColorBrush(Color.FromArgb(110, 226, 232, 244));
+                _footer.Foreground = new SolidColorBrush(Color.FromArgb(92, 220, 228, 240));
+                _pair.Foreground = new SolidColorBrush(Color.FromArgb(102, 164, 196, 252));
+                _divider.Background = new SolidColorBrush(Color.FromArgb(22, 255, 255, 255));
+                _closeBtn.Foreground = new SolidColorBrush(Color.FromArgb(64, 255, 255, 255));
             }
             else
             {
-                _root.Background = new SolidColorBrush(Color.FromArgb(246, 252, 252, 254));
-                _root.BorderBrush = new SolidColorBrush(Color.FromArgb(40, 0, 0, 0));
-                _target.Foreground = new SolidColorBrush(Color.FromRgb(24, 26, 32));
-                _source.Foreground = new SolidColorBrush(Color.FromRgb(96, 102, 116));
-                _footer.Foreground = new SolidColorBrush(Color.FromRgb(140, 146, 158));
-                _pair.Foreground = new SolidColorBrush(Color.FromRgb(28, 100, 210));
+                _root.Background = new SolidColorBrush(Color.FromArgb(QuietMode ? (byte)224 : (byte)244, 252, 252, 254));
+                _root.BorderBrush = new SolidColorBrush(Color.FromArgb(30, 0, 0, 0));
+                _target.Foreground = new SolidColorBrush(Color.FromRgb(32, 34, 40));
+                _source.Foreground = new SolidColorBrush(Color.FromRgb(118, 124, 136));
+                _footer.Foreground = new SolidColorBrush(Color.FromRgb(150, 156, 168));
+                _pair.Foreground = new SolidColorBrush(Color.FromRgb(60, 110, 190));
+                _divider.Background = new SolidColorBrush(Color.FromArgb(20, 0, 0, 0));
+                _closeBtn.Foreground = new SolidColorBrush(Color.FromArgb(70, 0, 0, 0));
             }
+
+            _root.Effect = QuietMode
+                ? new DropShadowEffect { BlurRadius = 8, ShadowDepth = 1, Direction = 270, Opacity = 0.12, Color = Colors.Black }
+                : new DropShadowEffect { BlurRadius = 16, ShadowDepth = 2, Direction = 270, Opacity = 0.32, Color = Colors.Black };
+
             _target.FontSize = _fontSize;
-            _target.LineHeight = _fontSize * 1.6;
-            _source.FontSize = _fontSize - 2;
-            _source.LineHeight = (_fontSize - 2) * 1.55;
+            _target.LineHeight = _fontSize * 1.5;
+            _source.FontSize = Math.Max(10, _fontSize - 2.5);
+            _source.LineHeight = Math.Max(10, _fontSize - 2.5) * 1.45;
         }
+
+        // MARK: - 内容
 
         public void ShowLoading(string source, string pair, int anchorX, int anchorY, bool showSource)
         {
@@ -197,49 +234,77 @@ namespace HoverTranslate
             _anchorY = anchorY;
             _original = source ?? "";
             _translated = "";
+            HasResult = false;
+            _dimmed = false;
+
             _pair.Text = pair;
             _source.Text = TextShape.Clean(source, 400);
             _sourceBox.Visibility = showSource && _source.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             _target.Text = "翻译中…";
             _target.Foreground = _dark
-                ? new SolidColorBrush(Color.FromArgb(150, 200, 210, 230))
-                : new SolidColorBrush(Color.FromRgb(120, 126, 140));
+                ? new SolidColorBrush(Color.FromArgb(140, 200, 210, 230))
+                : new SolidColorBrush(Color.FromRgb(130, 136, 148));
             _footer.Text = "";
+            _footer.Visibility = Visibility.Collapsed;
+
             Present();
         }
 
         public void ShowResult(TranslationResult r, bool showSource)
         {
+            HasResult = true;
             _translated = r == null ? "" : r.Target;
             _original = r == null ? _original : r.Source;
+
             if (r != null && r.Success)
             {
-                _pair.Text = Lang.DisplayPair(r.From, r.To);
+                _pair.Text = CompactPair(r);
                 _source.Text = TextShape.Clean(r.Source, 400);
                 _sourceBox.Visibility = showSource && _source.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
                 _target.Text = r.Target;
-                _target.Foreground = _dark ? Brushes.White : new SolidColorBrush(Color.FromRgb(24, 26, 32));
-                _footer.Text = "引擎 " + r.Engine + "   ·   右键复制译文   ·   按住可拖动";
+                _target.Foreground = _dark
+                    ? new SolidColorBrush(Color.FromArgb(238, 255, 255, 255))
+                    : new SolidColorBrush(Color.FromRgb(32, 34, 40));
+                _footer.Text = "";
+                _footer.Visibility = Visibility.Collapsed;
             }
             else
             {
+                _sourceBox.Visibility = Visibility.Collapsed;
                 _target.Text = "翻译失败";
                 _footer.Text = r == null ? "" : r.Error;
+                _footer.Visibility = string.IsNullOrEmpty(_footer.Text) ? Visibility.Collapsed : Visibility.Visible;
                 _target.Foreground = _dark
-                    ? new SolidColorBrush(Color.FromRgb(255, 138, 128))
-                    : new SolidColorBrush(Color.FromRgb(190, 50, 40));
+                    ? new SolidColorBrush(Color.FromRgb(240, 130, 120))
+                    : new SolidColorBrush(Color.FromRgb(185, 55, 45));
             }
             Present();
         }
 
         public void ShowMessage(string message, string detail)
         {
+            HasResult = false;
+            _dimmed = false;
             _pair.Text = "";
             _sourceBox.Visibility = Visibility.Collapsed;
             _target.Text = message;
-            _target.Foreground = _dark ? Brushes.White : new SolidColorBrush(Color.FromRgb(24, 26, 32));
+            _target.Foreground = _dark
+                ? new SolidColorBrush(Color.FromArgb(238, 255, 255, 255))
+                : new SolidColorBrush(Color.FromRgb(32, 34, 40));
             _footer.Text = detail ?? "";
+            _footer.Visibility = string.IsNullOrEmpty(_footer.Text) ? Visibility.Collapsed : Visibility.Visible;
             Present();
+        }
+
+        /// <summary>顶部只留「英→中 · 引擎」，把信息压到一行，避免多一行说明文字。</summary>
+        private string CompactPair(TranslationResult r)
+        {
+            string pair = Lang.DisplayPair(r.From, r.To);
+            if (string.IsNullOrEmpty(r.Engine)) return pair;
+            string engine = r.Engine;
+            if (engine.EndsWith("翻译")) engine = engine.Substring(0, engine.Length - 2);
+            if (engine.Length > 6) engine = engine.Substring(0, 6);
+            return pair + " · " + engine;
         }
 
         private void Present()
@@ -251,9 +316,8 @@ namespace HoverTranslate
             }
             UpdateLayout();
             Reposition();
-            FadeTo(1, 110);
+            FadeTo(1.0, 110);
 
-            // 内容变化后窗口尺寸会再变一次，等布局落定再校正位置，避免卡片被裁切或越界
             Dispatcher.BeginInvoke(new Action(delegate
             {
                 if (!IsVisible) return;
@@ -262,6 +326,12 @@ namespace HoverTranslate
             }), DispatcherPriority.Render);
         }
 
+        // MARK: - 定位
+
+        /// <summary>
+        /// 放在鼠标右侧、垂直与鼠标对齐。这样不会压住鼠标下方正在读的下一行。
+        /// 右侧放不下就翻到左侧。
+        /// </summary>
         public void Reposition()
         {
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
@@ -274,23 +344,37 @@ namespace HoverTranslate
 
             System.Drawing.Rectangle scr = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(_anchorX, _anchorY)).WorkingArea;
 
-            int x = _anchorX + 18;
-            int y = _anchorY + 24;
+            int gap = 22;
+            int x = _anchorX + gap;
+            int y = _anchorY - h / 2;
 
-            if (x + w > scr.Right - 8) x = _anchorX - w - 18;
-            if (y + h > scr.Bottom - 8) y = _anchorY - h - 24;
+            if (x + w > scr.Right - 8) x = _anchorX - w - gap;
             if (x < scr.Left + 8) x = scr.Left + 8;
+
+            if (y + h > scr.Bottom - 8) y = scr.Bottom - h - 8;
             if (y < scr.Top + 8) y = scr.Top + 8;
 
             Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, x, y, 0, 0,
                 Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
         }
 
+        // MARK: - 显隐与透明度
+
+        /// <summary>闲置时把卡片压到接近背景，需要时鼠标移上去恢复。</summary>
+        public void SetDim(bool on)
+        {
+            if (!IsVisible) return;
+            _dimmed = on;
+            FadeTo(on ? 0.42 : 1.0, on ? 320 : 140);
+        }
+
         public void HideCard(bool immediate)
         {
             if (!IsVisible) return;
             IsPinned = false;
-            _fadeTimer.Stop();
+            HasResult = false;
+            _dimmed = false;
+            _leaveTimer.Stop();
             if (immediate)
             {
                 Opacity = 0;
@@ -298,7 +382,7 @@ namespace HoverTranslate
             }
             else
             {
-                FadeTo(0, 140, () =>
+                FadeTo(0, 130, delegate
                 {
                     if (Opacity < 0.05) Hide();
                 });
@@ -308,7 +392,7 @@ namespace HoverTranslate
         private void FadeTo(double to, int ms, Action done = null)
         {
             var anim = new DoubleAnimation(to, TimeSpan.FromMilliseconds(ms));
-            anim.Completed += (s, e) => { if (done != null) done(); };
+            if (done != null) anim.Completed += (s, e) => done();
             BeginAnimation(OpacityProperty, anim);
         }
 
@@ -326,11 +410,6 @@ namespace HoverTranslate
             string text = string.IsNullOrEmpty(_translated) ? _target.Text : _translated;
             if (string.IsNullOrEmpty(text)) return;
             try { Clipboard.SetText(text); } catch { }
-            string old = _footer.Text;
-            _footer.Text = "已复制译文";
-            DispatcherTimer t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1100) };
-            t.Tick += (s, e) => { t.Stop(); if (IsVisible) _footer.Text = old; };
-            t.Start();
         }
     }
 }
