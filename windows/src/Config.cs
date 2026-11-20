@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using System.Web.Script.Serialization;
@@ -15,6 +15,8 @@ namespace HoverTranslate
         public bool DarkTheme { get; set; }
         public double FontSize { get; set; }
         public bool AutoStart { get; set; }
+        public bool QuietMode { get; set; }
+        public bool AutoDim { get; set; }
         public string HotkeyTranslate { get; set; }
         public string HotkeySwitch { get; set; }
         public string HotkeyToggle { get; set; }
@@ -23,9 +25,11 @@ namespace HoverTranslate
         {
             Direction = (int)HoverTranslate.Direction.Auto;
             HoverEnabled = true;
-            HoverDelayMs = 320;
+            HoverDelayMs = 380;
             MaxTextLength = 240;
-            ShowOriginal = true;
+            ShowOriginal = false;
+            QuietMode = true;
+            AutoDim = true;
             DarkTheme = true;
             FontSize = 15;
             AutoStart = false;
@@ -121,6 +125,7 @@ namespace HoverTranslate
             if (string.IsNullOrEmpty(HotkeyTranslate)) HotkeyTranslate = "Ctrl+Alt+T";
             if (string.IsNullOrEmpty(HotkeySwitch)) HotkeySwitch = "Ctrl+Alt+D";
             if (string.IsNullOrEmpty(HotkeyToggle)) HotkeyToggle = "Ctrl+Alt+H";
+            if (HoverDelayMs < 250) HoverDelayMs = 250;
         }
     }
 }
