@@ -39,6 +39,7 @@ namespace HoverTranslate
 
         public bool IsPinned { get; set; }
         public bool QuietMode { get; set; }
+        public int CardAnchor { get; set; }
         public bool HasResult { get; set; }
 
         public CardWindow()
@@ -329,8 +330,8 @@ namespace HoverTranslate
         // MARK: - 定位
 
         /// <summary>
-        /// 放在鼠标右侧、垂直与鼠标对齐。这样不会压住鼠标下方正在读的下一行。
-        /// 右侧放不下就翻到左侧。
+        /// 卡片定位。默认放鼠标左上方——那里是已经读过的内容，不会挡到后面和下面的句子。
+        /// 放不下就按 右上 → 左下 → 右下 的顺序找位置；也可以固定到屏幕右下角。
         /// </summary>
         public void Reposition()
         {
@@ -342,17 +343,49 @@ namespace HoverTranslate
             int w = r.Width, h = r.Height;
             if (w <= 0 || h <= 0) return;
 
-            System.Drawing.Rectangle scr = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(_anchorX, _anchorY)).WorkingArea;
+            System.Drawing.Rectangle scr = System.Windows.Forms.Screen.FromPoint(
+                new System.Drawing.Point(_anchorX, _anchorY)).WorkingArea;
 
-            int gap = 22;
-            int x = _anchorX + gap;
-            int y = _anchorY - h / 2;
+            int margin = 8;
+            int gap = 16;
+            int x, y;
 
-            if (x + w > scr.Right - 8) x = _anchorX - w - gap;
-            if (x < scr.Left + 8) x = scr.Left + 8;
+            if (CardAnchor == 2)
+            {
+                x = scr.Right - w - 16;
+                y = scr.Bottom - h - 16;
+            }
+            else if (CardAnchor == 1)
+            {
+                x = _anchorX + gap + 6;
+                y = _anchorY - h / 2;
+                if (x + w > scr.Right - margin) x = _anchorX - w - gap - 6;
+            }
+            else
+            {
+                // 左上优先，其次右上、左下、右下
+                int leftX = _anchorX - w - gap;
+                int rightX = _anchorX + gap;
+                int upY = _anchorY - h - gap;
+                int downY = _anchorY + gap;
 
-            if (y + h > scr.Bottom - 8) y = scr.Bottom - h - 8;
-            if (y < scr.Top + 8) y = scr.Top + 8;
+                x = leftX;
+                y = upY;
+
+                if (x < scr.Left + margin) x = rightX;
+                if (x + w > scr.Right - margin) x = leftX;
+
+                if (y < scr.Top + margin) y = downY;
+                if (y + h > scr.Bottom - margin) y = upY;
+
+                if (x < scr.Left + margin) x = scr.Left + margin;
+                if (x + w > scr.Right - margin) x = scr.Right - w - margin;
+                if (y < scr.Top + margin) y = scr.Top + margin;
+            }
+
+            if (y + h > scr.Bottom - margin) y = scr.Bottom - h - margin;
+            if (y < scr.Top + margin) y = scr.Top + margin;
+            if (x < scr.Left + margin) x = scr.Left + margin;
 
             Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, x, y, 0, 0,
                 Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
