@@ -187,10 +187,7 @@ final class Translator {
 
     private func youdao(_ text: String, from: String, to: String) -> TranslationResult? {
         let lc = from == "zh" ? "zh-CHS" : "en"
-        var comps = URLComponents(string: "https://aidemo.youdao.com/trans")
-        comps?.queryItems = []
-        let encoded = text.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? text
-        let form = "q=\(encoded)&from=Auto&to=Auto&salt=&sign=&lss=\(lc)"
+        let form = "q=\(esc(text))&from=Auto&to=Auto&salt=&sign=&lss=\(lc)"
 
         guard let data = postForm("https://aidemo.youdao.com/trans", form: form) else { return nil }
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
@@ -216,8 +213,8 @@ final class Translator {
 
     private func myMemory(_ text: String, from: String, to: String) -> TranslationResult? {
         let pair = (from == "zh" ? "zh-CN" : "en") + "|" + (to == "zh" ? "zh-CN" : "en")
-        let q = text.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? text
-        let p = pair.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? pair
+        let q = esc(text)
+        let p = esc(pair)
         let url = "https://api.mymemory.translated.net/get?q=\(q)&langpair=\(p)"
 
         guard let data = get(url) else { return nil }
@@ -240,6 +237,14 @@ final class Translator {
         }
         r.error = "未解析到译文"
         return r
+    }
+
+    // MARK: - 编码
+
+    private func esc(_ s: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&+=?#%")
+        return s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s
     }
 
     // MARK: - HTTP
