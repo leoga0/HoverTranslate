@@ -17,8 +17,8 @@ namespace HoverTranslate
     /// </summary>
     public class CardWindow : Window
     {
-        private const double MaxCardWidth = 360;
-        private const double TextMaxWidth = 336;
+        private const double MaxCardWidth = 440;
+        private const double TextMaxWidth = 414;
 
         private readonly Border _root;
         private readonly TextBlock _pair;
