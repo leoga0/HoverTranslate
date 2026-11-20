@@ -1,17 +1,23 @@
 import Cocoa
 
+/// 译文浮窗。
+/// 全部采用 frame 布局而非 Auto Layout：窗口尺寸随内容变化，用确定性计算更稳。
 final class CardPanel: NSPanel {
 
     static let cardWidth: CGFloat = 380
-    private let textInset: CGFloat = 14
+
+    private let padX: CGFloat = 14
+    private let padTop: CGFloat = 10
+    private let padBottom: CGFloat = 11
+    private let gap: CGFloat = 6
 
     private let backdrop = NSVisualEffectView()
-    private let stack = NSStackView()
-    private let pairLabel = NSTextField(labelWithString: "")
-    private let sourceLabel = NSTextField(wrappingLabelWithString: "")
-    private let targetLabel = NSTextField(wrappingLabelWithString: "")
-    private let footerLabel = NSTextField(labelWithString: "")
-    private let separator = NSBox()
+    private let headerLabel = NSTextField(labelWithString: "")
+    private let sourceField = NSTextField(labelWithString: "")
+    private let targetField = NSTextField(labelWithString: "")
+    private let footerField = NSTextField(labelWithString: "")
+    private let closeButton = NSButton()
+    private let divider = NSView()
 
     private var anchorQuartz = NSPoint.zero
     private(set) var translated = ""
@@ -35,175 +41,223 @@ final class CardPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         alphaValue = 0
 
-        backdrop.material = .hudWindow
-        backdrop.blendingMode = .behindWindow
-        backdrop.state = .active
-        backdrop.wantsLayer = true
-        backdrop.layer?.cornerRadius = 10
-        backdrop.layer?.masksToBounds = true
-        backdrop.translatesAutoresizingMaskIntoConstraints = false
-
-        let container = NSView()
-        container.wantsLayer = true
-        container.translatesAutoresizingMaskIntoConstraints = false
-        contentView = container
-        container.addSubview(backdrop)
-        NSLayoutConstraint.activate([
-            backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            backdrop.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            backdrop.topAnchor.constraint(equalTo: container.topAnchor),
-            backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-        ])
-
-        pairLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        pairLabel.textColor = NSColor(calibratedRed: 0.62, green: 0.78, blue: 1.0, alpha: 1)
-
-        sourceLabel.font = NSFont.systemFont(ofSize: 12)
-        sourceLabel.textColor = NSColor(calibratedWhite: 0.78, alpha: 1)
-        sourceLabel.preferredMaxLayoutWidth = CardPanel.cardWidth - textInset * 2
-        sourceLabel.maximumNumberOfLines = 3
-
-        targetLabel.font = NSFont.systemFont(ofSize: fontSize)
-        targetLabel.textColor = .white
-        targetLabel.preferredMaxLayoutWidth = CardPanel.cardWidth - textInset * 2
-        targetLabel.maximumNumberOfLines = 0
-
-        footerLabel.font = NSFont.systemFont(ofSize: 10)
-        footerLabel.textColor = NSColor(calibratedWhite: 0.62, alpha: 1)
-
-        separator.boxType = .separator
-        separator.translatesAutoresizingMaskIntoConstraints = false
-
-        let closeButton = NSButton(title: "×", target: self, action: #selector(closeTapped))
-        closeButton.isBordered = false
-        closeButton.font = NSFont.systemFont(ofSize: 14)
-        closeButton.contentTintColor = NSColor(calibratedWhite: 0.7, alpha: 1)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.widthAnchor.constraint(equalToConstant: 18).isActive = true
-
-        let headerRow = NSStackView(views: [pairLabel, closeButton])
-        headerRow.orientation = .horizontal
-        headerRow.alignment = .centerY
-        headerRow.distribution = .fill
-        headerRow.spacing = 8
-        pairLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 10, left: textInset, bottom: 11, right: textInset)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.addArrangedSubview(headerRow)
-        stack.addArrangedSubview(separator)
-        stack.addArrangedSubview(sourceLabel)
-        stack.addArrangedSubview(targetLabel)
-        stack.addArrangedSubview(footerLabel)
-        container.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: container.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            headerRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -textInset * 2),
-            separator.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -textInset * 2)
-        ])
-
+        setupViews()
         appliesTheme()
     }
 
     override var canBecomeKey: Bool { return false }
     override var canBecomeMain: Bool { return false }
 
-    // MARK: - 内容
+    // MARK: - 视图搭建
+
+    private func setupViews() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: CardPanel.cardWidth, height: 120))
+        container.autoresizingMask = [.width, .height]
+        contentView = container
+
+        backdrop.frame = container.bounds
+        backdrop.autoresizingMask = [.width, .height]
+        backdrop.blendingMode = .behindWindow
+        backdrop.state = .active
+        backdrop.wantsLayer = true
+        backdrop.layer?.cornerRadius = 10
+        backdrop.layer?.masksToBounds = true
+        container.addSubview(backdrop)
+
+        headerLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        headerLabel.maximumNumberOfLines = 1
+        headerLabel.lineBreakMode = .byTruncatingTail
+        container.addSubview(headerLabel)
+
+        closeButton.title = "×"
+        closeButton.isBordered = false
+        closeButton.font = NSFont.systemFont(ofSize: 14)
+        closeButton.contentTintColor = NSColor(calibratedWhite: 0.68, alpha: 1)
+        closeButton.target = self
+        closeButton.action = #selector(closeTapped)
+        container.addSubview(closeButton)
+
+        divider.wantsLayer = true
+        container.addSubview(divider)
+
+        sourceField.maximumNumberOfLines = 3
+        sourceField.lineBreakMode = .byTruncatingTail
+        sourceField.cell?.wraps = true
+        container.addSubview(sourceField)
+
+        targetField.maximumNumberOfLines = 0
+        targetField.lineBreakMode = .byWordWrapping
+        targetField.cell?.wraps = true
+        container.addSubview(targetField)
+
+        footerField.maximumNumberOfLines = 1
+        footerField.lineBreakMode = .byTruncatingTail
+        container.addSubview(footerField)
+    }
+
+    // MARK: - 主题
 
     func appliesTheme() {
-        pairLabel.textColor = darkTheme
+        backdrop.material = darkTheme ? .hudWindow : .popover
+
+        headerLabel.textColor = darkTheme
             ? NSColor(calibratedRed: 0.62, green: 0.78, blue: 1.0, alpha: 1)
             : NSColor(calibratedRed: 0.11, green: 0.39, blue: 0.82, alpha: 1)
-        sourceLabel.textColor = darkTheme
+        headerLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+
+        sourceField.textColor = darkTheme
             ? NSColor(calibratedWhite: 0.80, alpha: 1)
-            : NSColor(calibratedWhite: 0.38, alpha: 1)
-        targetLabel.textColor = darkTheme ? .white : NSColor(calibratedWhite: 0.12, alpha: 1)
-        footerLabel.textColor = darkTheme
-            ? NSColor(calibratedWhite: 0.62, alpha: 1)
-            : NSColor(calibratedWhite: 0.48, alpha: 1)
-        targetLabel.font = NSFont.systemFont(ofSize: fontSize)
-        sourceLabel.font = NSFont.systemFont(ofSize: max(10, fontSize - 3))
-        backdrop.material = darkTheme ? .hudWindow : .popover
+            : NSColor(calibratedWhite: 0.40, alpha: 1)
+        sourceField.font = NSFont.systemFont(ofSize: max(10, fontSize - 3))
+
+        targetField.textColor = darkTheme ? .white : NSColor(calibratedWhite: 0.12, alpha: 1)
+        targetField.font = NSFont.systemFont(ofSize: fontSize)
+
+        footerField.textColor = darkTheme
+            ? NSColor(calibratedWhite: 0.60, alpha: 1)
+            : NSColor(calibratedWhite: 0.50, alpha: 1)
+        footerField.font = NSFont.systemFont(ofSize: 10)
+
+        divider.layer?.backgroundColor = (darkTheme
+            ? NSColor(calibratedWhite: 1.0, alpha: 0.12)
+            : NSColor(calibratedWhite: 0.0, alpha: 0.10)).cgColor
+
+        closeButton.contentTintColor = darkTheme
+            ? NSColor(calibratedWhite: 0.70, alpha: 1)
+            : NSColor(calibratedWhite: 0.35, alpha: 1)
     }
+
+    // MARK: - 内容接口
 
     func showLoading(source: String, pair: String, quartzX: CGFloat, quartzY: CGFloat) {
         anchorQuartz = NSPoint(x: quartzX, y: quartzY)
         translated = ""
-        pairLabel.stringValue = pair
-        sourceLabel.stringValue = TextShape.clean(source, maxLen: 400)
-        sourceLabel.isHidden = !showOriginal || sourceLabel.stringValue.isEmpty
-        targetLabel.stringValue = "翻译中…"
-        targetLabel.textColor = NSColor(calibratedWhite: 0.75, alpha: 1)
-        footerLabel.stringValue = ""
+        headerLabel.stringValue = pair
+        sourceField.stringValue = TextShape.clean(source, maxLen: 400)
+        sourceField.isHidden = !showOriginal || sourceField.stringValue.isEmpty
+        targetField.stringValue = "翻译中…"
+        targetField.textColor = darkTheme
+            ? NSColor(calibratedWhite: 0.75, alpha: 1)
+            : NSColor(calibratedWhite: 0.35, alpha: 1)
+        footerField.stringValue = ""
         present()
     }
 
     func showResult(_ r: TranslationResult) {
         if r.success {
             translated = r.target
-            pairLabel.stringValue = Lang.displayPair(r.from, r.to)
-            sourceLabel.stringValue = TextShape.clean(r.source, maxLen: 400)
-            sourceLabel.isHidden = !showOriginal || sourceLabel.stringValue.isEmpty
-            targetLabel.stringValue = r.target
-            targetLabel.textColor = darkTheme ? .white : NSColor(calibratedWhite: 0.12, alpha: 1)
-            footerLabel.stringValue = "\(r.engine) · 右键复制译文 · 按住可拖动"
+            headerLabel.stringValue = Lang.displayPair(r.from, r.to)
+            sourceField.stringValue = TextShape.clean(r.source, maxLen: 400)
+            sourceField.isHidden = !showOriginal || sourceField.stringValue.isEmpty
+            targetField.stringValue = r.target
+            targetField.textColor = darkTheme ? .white : NSColor(calibratedWhite: 0.12, alpha: 1)
+            footerField.stringValue = "\(r.engine) · 右键复制译文 · 按住可拖动"
         } else {
             translated = ""
-            targetLabel.stringValue = "翻译失败"
-            targetLabel.textColor = NSColor(calibratedRed: 1, green: 0.48, blue: 0.45, alpha: 1)
-            footerLabel.stringValue = r.error
+            sourceField.isHidden = true
+            targetField.stringValue = "翻译失败"
+            targetField.textColor = NSColor(calibratedRed: 1, green: 0.48, blue: 0.45, alpha: 1)
+            footerField.stringValue = r.error
         }
         present()
     }
 
     func showMessage(_ message: String, detail: String) {
-        pairLabel.stringValue = ""
-        sourceLabel.stringValue = ""
-        sourceLabel.isHidden = true
-        targetLabel.stringValue = message
-        targetLabel.textColor = darkTheme ? .white : NSColor(calibratedWhite: 0.12, alpha: 1)
-        footerLabel.stringValue = detail
+        headerLabel.stringValue = ""
+        sourceField.stringValue = ""
+        sourceField.isHidden = true
+        translated = ""
+        targetField.stringValue = message
+        targetField.textColor = darkTheme ? .white : NSColor(calibratedWhite: 0.12, alpha: 1)
+        footerField.stringValue = detail
         present()
     }
 
-    // MARK: - 显示与定位
+    // MARK: - 布局
 
-    private func present() {
-        layoutIfNeeded()
-        contentView?.layoutSubtreeIfNeeded()
-        let fitting = stack.fittingSize
-        let height = max(60, fitting.height)
-        setContentSize(NSSize(width: CardPanel.cardWidth, height: height))
-        reposition()
-        orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.12
-            animator().alphaValue = 1
+    private func textHeight(_ text: String, font: NSFont, width: CGFloat, maxLines: Int) -> CGFloat {
+        if text.isEmpty { return 0 }
+        let attr = NSAttributedString(string: text, attributes: [.font: font])
+        let rect = attr.boundingRect(with: NSSize(width: width, height: 20000),
+                                     options: [.usesLineFragmentOrigin, .usesFontLeading])
+        var h = ceil(rect.height) + 2
+        if maxLines > 0 {
+            let lineH = ceil(font.ascender - font.descender + font.leading)
+            h = min(h, lineH * CGFloat(maxLines))
         }
+        return h
     }
 
-    func reposition() {
-        let size = frame.size
-        let mainHeight = NSScreen.screens.first?.frame.height ?? 1080
-        // Quartz（左上原点）转 Cocoa（左下原点）
-        let cocoaY = mainHeight - anchorQuartz.y
+    private func present() {
+        let contentW = CardPanel.cardWidth - padX * 2
 
+        let headerH: CGFloat = 15
+        let dividerH: CGFloat = 1
+        let footerH: CGFloat = 13
+
+        let sourceH = sourceField.isHidden ? 0 : textHeight(sourceField.stringValue,
+                                                            font: sourceField.font ?? NSFont.systemFont(ofSize: 12),
+                                                            width: contentW, maxLines: 3)
+        let targetH = textHeight(targetField.stringValue,
+                                 font: targetField.font ?? NSFont.systemFont(ofSize: fontSize),
+                                 width: contentW, maxLines: 0)
+
+        var total = padTop + headerH + gap + dividerH + gap
+        if sourceH > 0 { total += sourceH + 7 }
+        total += max(14, targetH) + 7 + footerH + padBottom
+
+        let width = CardPanel.cardWidth
+        setContentSize(NSSize(width: width, height: max(58, total)))
+        guard let container = contentView else { return }
+        container.frame = NSRect(x: 0, y: 0, width: width, height: max(58, total))
+        backdrop.frame = container.bounds
+
+        // 在 Cocoa 坐标里自上而下摆放
+        var top = container.bounds.height - padTop
+
+        headerLabel.frame = NSRect(x: padX, y: top - headerH, width: contentW - 20, height: headerH)
+        closeButton.frame = NSRect(x: width - padX - 16, y: top - headerH, width: 16, height: 15)
+        top -= headerH + gap
+
+        divider.frame = NSRect(x: padX, y: top - dividerH, width: contentW, height: dividerH)
+        top -= dividerH + gap
+
+        if sourceH > 0 {
+            sourceField.frame = NSRect(x: padX, y: top - sourceH, width: contentW, height: sourceH)
+            top -= sourceH + 7
+        }
+
+        let targetDrawH = max(14, targetH)
+        targetField.frame = NSRect(x: padX, y: top - targetDrawH, width: contentW, height: targetDrawH)
+        top -= targetDrawH + 7
+
+        footerField.frame = NSRect(x: padX, y: top - footerH, width: contentW, height: footerH)
+
+        reposition()
+        orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.12
+            self.animator().alphaValue = 1
+        }, completionHandler: nil)
+    }
+
+    // MARK: - 定位
+
+    func reposition() {
+        guard let first = NSScreen.screens.first else { return }
+        let size = frame.size
+        let mainHeight = first.frame.height
+
+        let cocoaY = mainHeight - anchorQuartz.y
         var x = anchorQuartz.x + 18
         var y = cocoaY - 24 - size.height
 
-        // 优先放在鼠标右下；越界则翻到左上
-        if let screen = screenContaining(NSPoint(x: anchorQuartz.x, y: cocoaY)) {
+        let probe = NSPoint(x: anchorQuartz.x, y: cocoaY)
+        if let screen = screenContaining(probe) {
             let visible = screen.visibleFrame
             if x + size.width > visible.maxX - 8 { x = anchorQuartz.x - size.width - 18 }
-            if y < visible.minY + 8 { y = cocoaY + 24 }
             if x < visible.minX + 8 { x = visible.minX + 8 }
+            if y < visible.minY + 8 { y = cocoaY + 24 }
             if y + size.height > visible.maxY - 8 { y = visible.maxY - size.height - 8 }
         }
 
@@ -211,8 +265,8 @@ final class CardPanel: NSPanel {
     }
 
     private func screenContaining(_ p: NSPoint) -> NSScreen? {
-        for s in NSScreen.screens {
-            if s.frame.contains(p) { return s }
+        for s in NSScreen.screens where s.frame.contains(p) {
+            return s
         }
         return NSScreen.main
     }
@@ -222,7 +276,7 @@ final class CardPanel: NSPanel {
         if animated {
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.14
-                animator().alphaValue = 0
+                self.animator().alphaValue = 0
             }, completionHandler: {
                 self.orderOut(nil)
             })
@@ -246,11 +300,11 @@ final class CardPanel: NSPanel {
     }
 
     override func rightMouseUp(with event: NSEvent) {
-        let text = translated.isEmpty ? targetLabel.stringValue : translated
+        let text = translated.isEmpty ? targetField.stringValue : translated
         guard !text.isEmpty else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(text, forType: .string)
-        footerLabel.stringValue = "已复制译文"
+        footerField.stringValue = "已复制译文"
     }
 }
