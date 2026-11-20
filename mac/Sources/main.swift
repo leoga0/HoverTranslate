@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Config.log("launch")
 
         panel = CardPanel()
+        panel.cardAnchor = config.cardAnchor
         panel.darkTheme = config.darkTheme
         panel.fontSize = config.fontSize
         panel.showOriginal = config.showOriginal
@@ -74,19 +75,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(hoverMenuItem)
         menu.addItem(NSMenuItem.separator())
 
-        let dirMenu = NSMenuItem(title: "翻译方向", action: nil, keyEquivalent: "")
-        let dirSub = NSMenu()
-        let titles = ["自动识别", "英译中", "中译英"]
-        for (idx, title) in titles.enumerated() {
-            let item = NSMenuItem(title: title, action: #selector(setDirection(_:)), keyEquivalent: "")
+        let targetMenu = NSMenuItem(title: "翻译目标", action: nil, keyEquivalent: "")
+        let targetSub = NSMenu()
+        let targetTitles = ["译成中文（只在非中文上翻译）", "译成英文（只在中文上翻译）", "双向都翻"]
+        let targetKeys = ["zh", "en", "both"]
+        for (idx, title) in targetTitles.enumerated() {
+            let item = NSMenuItem(title: title, action: #selector(setTargetLang(_:)), keyEquivalent: "")
             item.target = self
             item.tag = idx
-            item.state = config.direction.rawValue == idx ? .on : .off
-            dirSub.addItem(item)
+            item.state = config.targetLang == targetKeys[idx] ? .on : .off
+            targetSub.addItem(item)
             dirItems.append(item)
         }
-        dirMenu.submenu = dirSub
-        menu.addItem(dirMenu)
+        targetMenu.submenu = targetSub
+        menu.addItem(targetMenu)
+
+        let posMenu = NSMenuItem(title: "卡片位置", action: nil, keyEquivalent: "")
+        let posSub = NSMenu()
+        let posTitles = ["鼠标左上方（不挡下文）", "鼠标右侧", "固定右下角"]
+        for (idx, title) in posTitles.enumerated() {
+            let item = NSMenuItem(title: title, action: #selector(setAnchor(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = idx
+            item.state = config.cardAnchor == idx ? .on : .off
+            posSub.addItem(item)
+        }
+        posMenu.submenu = posSub
+        menu.addItem(posMenu)
 
         let themeMenu = NSMenuItem(title: "外观", action: nil, keyEquivalent: "")
         let themeSub = NSMenu()
@@ -130,10 +145,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !config.hoverEnabled { panel.hideCard() }
     }
 
-    @objc private func setDirection(_ sender: NSMenuItem) {
-        config.direction = Direction(rawValue: sender.tag) ?? .auto
+    @objc private func setTargetLang(_ sender: NSMenuItem) {
+        let keys = ["zh", "en", "both"]
+        config.targetLang = keys[max(0, min(2, sender.tag))]
         for item in dirItems {
             item.state = item.tag == sender.tag ? .on : .off
+        }
+    }
+
+    @objc private func setAnchor(_ sender: NSMenuItem) {
+        config.cardAnchor = sender.tag
+        if let menu = sender.menu {
+            for item in menu.items {
+                item.state = item.tag == sender.tag ? .on : .off
+            }
         }
     }
 
@@ -199,8 +224,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func cycleDirection() {
-        let next = (config.direction.rawValue + 1) % 3
-        config.direction = Direction(rawValue: next) ?? .auto
+        let keys = ["zh", "en", "both"]
+        let idx = keys.firstIndex(of: config.targetLang) ?? 0
+        let next = (idx + 1) % keys.count
+        config.targetLang = keys[next]
         DispatchQueue.main.async {
             for item in self.dirItems {
                 item.state = item.tag == next ? .on : .off
@@ -313,6 +340,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 整段都已经是目标语言时不翻译；手动快捷键不受限制。
+    private func shouldTranslate(_ text: String, manual: Bool) -> Bool {
+        if manual { return true }
+        if config.targetLang == "both" { return true }
+        return LangSplitter.countTranslatable(text, targetIsCjk: config.targetLang == "zh") > 0
+    }
+
+    private func targetLabel() -> String {
+        if config.targetLang == "both" { return "双向" }
+        return config.targetLang == "zh" ? "译成中文" : "译成英文"
+    }
+
     private func handle(text: String, at p: NSPoint, manual: Bool) {
         if text.isEmpty {
             if manual {
@@ -322,23 +361,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // 目标语言过滤：整段已经是目标语言时不打扰，顺手把旧卡片收掉
+        if !shouldTranslate(text, manual: manual) {
+            if !manual { panel.hideCard() }
+            return
+        }
+
         if text == lastText && panel.isVisible { return }
         lastText = text
 
-        let (from, to) = Lang.resolve(config.direction, text: text)
         panel.darkTheme = config.darkTheme
         panel.fontSize = config.fontSize
         panel.showOriginal = config.showOriginal
+        panel.cardAnchor = config.cardAnchor
         panel.appliesTheme()
-        panel.showLoading(source: text, pair: Lang.displayPair(from, to), quartzX: p.x, quartzY: p.y)
+        panel.showLoading(source: text, pair: targetLabel(), quartzX: p.x, quartzY: p.y)
 
         let req = requestId
-        let dir = config.direction
+        let target = config.targetLang
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let r = self.translator.translate(text, dir: dir)
+            let m = self.translator.translateForTarget(text, targetLang: target)
             DispatchQueue.main.async {
                 if req != self.requestId { return }
+                if !m.shouldShow {
+                    self.panel.hideCard()
+                    return
+                }
+                var r = TranslationResult()
+                r.success = m.success
+                r.source = m.source
+                r.target = m.target
+                r.from = m.from
+                r.to = m.to
+                r.engine = m.engine
+                r.error = m.error
                 self.panel.showResult(r)
                 self.scheduleDim()
             }
