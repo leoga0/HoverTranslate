@@ -334,7 +334,7 @@ namespace HoverTranslate
             int shown = 0;
             foreach (Terminology.Term term in terms)
             {
-                if (shown >= 2) break;
+                if (shown >= 3) break;
 
                 var head = new TextBlock
                 {
@@ -385,7 +385,7 @@ namespace HoverTranslate
             _root.Arrange(new Rect(0, 0, _root.DesiredSize.Width, _root.DesiredSize.Height));
 
             double w = Math.Min(MaxCardWidth, Math.Max(88, Math.Ceiling(_root.DesiredSize.Width) + 2));
-            double h = Math.Max(40, Math.Ceiling(_root.ActualHeight) + 16);
+            double h = Math.Max(40, Math.Ceiling(_root.ActualHeight) + 30);
             if (double.IsNaN(w) || double.IsNaN(h)) return;
 
             double scale = Native.GetScaleForPoint(_anchorX, _anchorY);
