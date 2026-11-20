@@ -116,8 +116,13 @@ namespace HoverTranslate
 
         public static string PostJson(string url, string json, int timeoutMs)
         {
+            return PostJson(url, json, timeoutMs, null);
+        }
+
+        public static string PostJson(string url, string json, int timeoutMs, Dictionary<string, string> headers)
+        {
             byte[] body = Encoding.UTF8.GetBytes(json);
-            return Send(url, "POST", "application/json; charset=UTF-8", body, timeoutMs, null);
+            return Send(url, "POST", "application/json; charset=UTF-8", body, timeoutMs, null, headers);
         }
 
         public static string PostForm(string url, string form, int timeoutMs)
@@ -133,6 +138,11 @@ namespace HoverTranslate
 
         private static string Send(string url, string method, string contentType, byte[] body, int timeoutMs, string referer)
         {
+            return Send(url, method, contentType, body, timeoutMs, referer, null);
+        }
+
+        private static string Send(string url, string method, string contentType, byte[] body, int timeoutMs, string referer, Dictionary<string, string> headers)
+        {
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = method;
             req.UserAgent = UA;
@@ -143,6 +153,15 @@ namespace HoverTranslate
             req.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
             if (!string.IsNullOrEmpty(contentType)) req.ContentType = contentType;
             if (!string.IsNullOrEmpty(referer)) req.Referer = referer;
+            if (headers != null)
+            {
+                foreach (KeyValuePair<string, string> kv in headers)
+                {
+                    if (kv.Value == null) continue;
+                    if (kv.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)) continue;
+                    req.Headers[kv.Key] = kv.Value;
+                }
+            }
 
             if (body != null)
             {
