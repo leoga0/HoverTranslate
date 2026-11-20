@@ -18,6 +18,7 @@ namespace HoverTranslate
         public bool QuietMode { get; set; }
         public bool AutoDim { get; set; }
         public string TargetLang { get; set; }
+        public bool SelectionExplain { get; set; }
         public int CardAnchor { get; set; }
         public string HotkeyTranslate { get; set; }
         public string HotkeySwitch { get; set; }
@@ -33,6 +34,7 @@ namespace HoverTranslate
             QuietMode = true;
             AutoDim = true;
             TargetLang = "zh";
+            SelectionExplain = true;
             CardAnchor = 0;
             DarkTheme = true;
             FontSize = 15;
