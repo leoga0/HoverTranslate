@@ -51,6 +51,16 @@ final class Config {
         set { defaults.set(newValue, forKey: prefix + "darkTheme") }
     }
 
+    var targetLang: String {
+        get { return defaults.string(forKey: prefix + "targetLang") ?? "zh" }
+        set { defaults.set(newValue, forKey: prefix + "targetLang") }
+    }
+
+    var cardAnchor: Int {
+        get { return defaults.integer(forKey: prefix + "cardAnchor") }
+        set { defaults.set(newValue, forKey: prefix + "cardAnchor") }
+    }
+
     var fontSize: CGFloat {
         get {
             let v = defaults.double(forKey: prefix + "fontSize")
