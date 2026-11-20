@@ -251,9 +251,12 @@ final class Translator {
             return outcome
         }
 
+        // 命中技术术语就先记下来，后面无论译文有没有变化都要把它讲清楚
+        outcome.terms = Terminology.match(trimmed, max: 2)
+
         if targetLang == "both" {
             let r = translate(trimmed, dir: .auto)
-            outcome.shouldShow = true
+            outcome.shouldShow = r.success || !outcome.terms.isEmpty
             outcome.success = r.success
             outcome.target = r.target
             outcome.from = r.from
@@ -310,11 +313,11 @@ final class Translator {
             outcome.error = lastError.isEmpty ? "没有需要翻译的内容" : lastError
         }
 
-        // 译文和原文一样就别弹卡片
+        // 译文和原文一样就别弹卡片；但命中了术语要留下，解释本身有价值
         if outcome.shouldShow {
             let a = squash(outcome.target)
             let b = squash(trimmed)
-            if a == b { outcome.shouldShow = false }
+            if a == b && outcome.terms.isEmpty { outcome.shouldShow = false }
         }
         return outcome
     }
@@ -392,6 +395,7 @@ struct MixedOutcome {
     var engine = ""
     var error = ""
     var translatedParts = 0
+    var terms: [Terminology.Term] = []
 }
 
 enum LangSplitter {
