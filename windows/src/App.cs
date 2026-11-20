@@ -20,9 +20,12 @@ namespace HoverTranslate
         private CardWindow _card;
         private Forms.NotifyIcon _tray;
         private Forms.ToolStripMenuItem _miHover;
-        private Forms.ToolStripMenuItem _miAuto;
-        private Forms.ToolStripMenuItem _miEnZh;
-        private Forms.ToolStripMenuItem _miZhEn;
+        private Forms.ToolStripMenuItem _miTargetZh;
+        private Forms.ToolStripMenuItem _miTargetEn;
+        private Forms.ToolStripMenuItem _miTargetBoth;
+        private Forms.ToolStripMenuItem _miAnchorMouse;
+        private Forms.ToolStripMenuItem _miAnchorRight;
+        private Forms.ToolStripMenuItem _miAnchorCorner;
         private Forms.ToolStripMenuItem _miDark;
         private Forms.ToolStripMenuItem _miAutoStart;
         private DispatcherTimer _timer;
@@ -75,6 +78,7 @@ namespace HoverTranslate
 
             _card = new CardWindow();
             _card.QuietMode = _cfg.QuietMode;
+            _card.CardAnchor = _cfg.CardAnchor;
             _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
             AppConfig.Log("card ok");
 
@@ -108,13 +112,22 @@ namespace HoverTranslate
             _miHover = new Forms.ToolStripMenuItem("悬停翻译", null, (s, e) => ToggleHover());
             _miHover.Checked = _cfg.HoverEnabled;
 
-            var dirMenu = new Forms.ToolStripMenuItem("翻译方向");
-            _miAuto = new Forms.ToolStripMenuItem("自动识别", null, (s, e) => SetDirection(Direction.Auto));
-            _miEnZh = new Forms.ToolStripMenuItem("英译中", null, (s, e) => SetDirection(Direction.EnToZh));
-            _miZhEn = new Forms.ToolStripMenuItem("中译英", null, (s, e) => SetDirection(Direction.ZhToEn));
-            dirMenu.DropDownItems.Add(_miAuto);
-            dirMenu.DropDownItems.Add(_miEnZh);
-            dirMenu.DropDownItems.Add(_miZhEn);
+            var targetMenu = new Forms.ToolStripMenuItem("翻译目标");
+            _miTargetZh = new Forms.ToolStripMenuItem("译成中文（只在非中文上翻译）", null, (s, e) => SetTargetLang("zh"));
+            _miTargetEn = new Forms.ToolStripMenuItem("译成英文（只在中文上翻译）", null, (s, e) => SetTargetLang("en"));
+            _miTargetBoth = new Forms.ToolStripMenuItem("双向都翻", null, (s, e) => SetTargetLang("both"));
+            targetMenu.DropDownItems.Add(_miTargetZh);
+            targetMenu.DropDownItems.Add(_miTargetEn);
+            targetMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
+            targetMenu.DropDownItems.Add(_miTargetBoth);
+
+            var posMenu = new Forms.ToolStripMenuItem("卡片位置");
+            _miAnchorMouse = new Forms.ToolStripMenuItem("鼠标左上方（不挡下文）", null, (s, e) => SetAnchor(0));
+            _miAnchorRight = new Forms.ToolStripMenuItem("鼠标右侧", null, (s, e) => SetAnchor(1));
+            _miAnchorCorner = new Forms.ToolStripMenuItem("固定右下角", null, (s, e) => SetAnchor(2));
+            posMenu.DropDownItems.Add(_miAnchorMouse);
+            posMenu.DropDownItems.Add(_miAnchorRight);
+            posMenu.DropDownItems.Add(_miAnchorCorner);
 
             var themeMenu = new Forms.ToolStripMenuItem("外观");
             _miDark = new Forms.ToolStripMenuItem("深色卡片", null, (s, e) => ToggleTheme());
@@ -149,10 +162,12 @@ namespace HoverTranslate
             var miHelp = new Forms.ToolStripMenuItem("快捷键说明", null, (s, e) =>
             {
                 MessageBox.Show(
-                    "鼠标停在任意文字上约 " + _cfg.HoverDelayMs + " 毫秒，自动弹出译文。\n\n" +
+                    "鼠标停在需要翻译的文字上约 " + _cfg.HoverDelayMs + " 毫秒，自动弹出译文。\n\n" +
                     "Ctrl+Alt+T   立即翻译光标处的文字（取不到则翻剪贴板）\n" +
-                    "Ctrl+Alt+D   切换翻译方向（自动 / 英译中 / 中译英）\n" +
+                    "Ctrl+Alt+D   切换翻译目标（中文 / 英文 / 双向）\n" +
                     "Ctrl+Alt+H   暂停或恢复悬停翻译\n\n" +
+                    "「翻译目标」决定什么情况才翻译：译成中文时，鼠标停在中文上不会弹卡片。\n" +
+                    "一句话里中英混排时，只翻非目标语言的部分。\n\n" +
                     "卡片：按住左键可拖动，右键复制译文，右上角 × 关闭。",
                     "悬停翻译",
                     MessageBoxButton.OK,
@@ -163,7 +178,8 @@ namespace HoverTranslate
 
             menu.Items.Add(_miHover);
             menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add(dirMenu);
+            menu.Items.Add(targetMenu);
+            menu.Items.Add(posMenu);
             menu.Items.Add(themeMenu);
             menu.Items.Add(_miAutoStart);
             menu.Items.Add(new Forms.ToolStripSeparator());
@@ -174,23 +190,40 @@ namespace HoverTranslate
 
             _tray.ContextMenuStrip = menu;
             _tray.DoubleClick += (s, e) => ToggleHover();
-            RefreshDirectionChecks();
+            RefreshTargetChecks();
+            RefreshAnchorChecks();
         }
 
-        private void SetDirection(Direction d)
+        private void SetTargetLang(string lang)
         {
-            _cfg.Direction = (int)d;
+            _cfg.TargetLang = lang;
             _cfg.Save();
-            RefreshDirectionChecks();
-            ShowToast(d == Direction.Auto ? "方向：自动识别" : (d == Direction.EnToZh ? "方向：英译中" : "方向：中译英"));
+            RefreshTargetChecks();
+            ShowToast(lang == "zh" ? "译成中文 · 中文不再触发" : (lang == "en" ? "译成英文 · 英文不再触发" : "双向都翻"));
         }
 
-        private void RefreshDirectionChecks()
+        private void RefreshTargetChecks()
         {
-            if (_miAuto == null) return;
-            _miAuto.Checked = _cfg.Direction == (int)Direction.Auto;
-            _miEnZh.Checked = _cfg.Direction == (int)Direction.EnToZh;
-            _miZhEn.Checked = _cfg.Direction == (int)Direction.ZhToEn;
+            if (_miTargetZh == null) return;
+            _miTargetZh.Checked = _cfg.TargetLang == "zh";
+            _miTargetEn.Checked = _cfg.TargetLang == "en";
+            _miTargetBoth.Checked = _cfg.TargetLang == "both";
+        }
+
+        private void SetAnchor(int mode)
+        {
+            _cfg.CardAnchor = mode;
+            _cfg.Save();
+            RefreshAnchorChecks();
+            ShowToast(mode == 0 ? "卡片在鼠标左上方" : (mode == 1 ? "卡片在鼠标右侧" : "卡片固定在右下角"));
+        }
+
+        private void RefreshAnchorChecks()
+        {
+            if (_miAnchorMouse == null) return;
+            _miAnchorMouse.Checked = _cfg.CardAnchor == 0;
+            _miAnchorRight.Checked = _cfg.CardAnchor == 1;
+            _miAnchorCorner.Checked = _cfg.CardAnchor == 2;
         }
 
         private void ToggleHover()
@@ -235,6 +268,7 @@ namespace HoverTranslate
         private void RefreshCardStyle()
         {
             _card.QuietMode = _cfg.QuietMode;
+            _card.CardAnchor = _cfg.CardAnchor;
             _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
         }
 
@@ -340,8 +374,10 @@ namespace HoverTranslate
 
         private void CycleDirection()
         {
-            int next = (_cfg.Direction + 1) % 3;
-            SetDirection((Direction)next);
+            string[] order = { "zh", "en", "both" };
+            int idx = Array.IndexOf(order, _cfg.TargetLang);
+            if (idx < 0) idx = 0;
+            SetTargetLang(order[(idx + 1) % order.Length]);
         }
 
         private void TranslateNow()
@@ -484,25 +520,45 @@ namespace HoverTranslate
             if (_card.IsVisible && _card.Tag as string == text) return;
             _card.Tag = text;
 
-            string from, to;
-            Lang.Resolve((Direction)_cfg.Direction, text, out from, out to);
+            // 目标语言过滤：整段已经是目标语言时不打扰，直接不弹，顺手把旧卡片收掉
+            if (!ShouldTranslateText(text, manual))
+            {
+                if (!manual) _card.HideCard(false);
+                return;
+            }
 
-            _card.ShowLoading(text, Lang.DisplayPair(from, to), p.X, p.Y, _cfg.ShowOriginal);
-
+            _card.CardAnchor = _cfg.CardAnchor;
+            _card.ShowLoading(text, TargetLabel(), p.X, p.Y, _cfg.ShowOriginal);
 
             int req = _requestId;
-            Direction dir = (Direction)_cfg.Direction;
+            string target = _cfg.TargetLang;
 
             ThreadPool.QueueUserWorkItem(delegate
             {
-                TranslationResult r = null;
-                try { r = _service.Translate(text, dir); }
-                catch (Exception ex) { r = new TranslationResult { Error = ex.Message }; }
+                MixedOutcome m = null;
+                try { m = _service.TranslateForTarget(text, target); }
+                catch (Exception ex) { m = new MixedOutcome { Error = ex.Message }; }
 
                 Dispatcher.BeginInvoke(new Action(delegate
                 {
                     if (req != _requestId) return;
 
+                    if (m == null || !m.ShouldShow)
+                    {
+                        _card.HideCard(true);
+                        return;
+                    }
+
+                    var r = new TranslationResult
+                    {
+                        Success = m.Success,
+                        Source = m.Source,
+                        Target = m.Target,
+                        From = m.From,
+                        To = m.To,
+                        Engine = m.Engine,
+                        Error = m.Error
+                    };
                     _card.ShowResult(r, _cfg.ShowOriginal);
                     ScheduleAutoDim();
                     if (!_cfg.HoverEnabled) AutoHide(2200);
@@ -524,6 +580,21 @@ namespace HoverTranslate
                 }
             };
             t.Start();
+        }
+
+        /// <summary>整段都已经是目标语言时不翻译；手动快捷键不受限制。</summary>
+        private bool ShouldTranslateText(string text, bool manual)
+        {
+            if (manual) return true;
+            if (_cfg.TargetLang == "both") return true;
+            bool targetIsCjk = _cfg.TargetLang == "zh";
+            return LangSplitter.CountTranslatable(text, targetIsCjk) > 0;
+        }
+
+        private string TargetLabel()
+        {
+            if (_cfg.TargetLang == "both") return "双向";
+            return _cfg.TargetLang == "zh" ? "译成中文" : "译成英文";
         }
 
         private void AutoHide(int ms)
