@@ -110,7 +110,10 @@ enum Terminology {
 
     private static func indexOf(_ text: String, _ word: String) -> Int? {
         if word.count < 2 { return nil }
-        let ascii = word.unicodeScalars.allSatisfy { .value < 128 }
+        var ascii = true
+        for scalar in word.unicodeScalars {
+            if scalar.value >= 128 { ascii = false; break }
+        }
 
         if !ascii {
             guard let r = text.range(of: word) else { return nil }
