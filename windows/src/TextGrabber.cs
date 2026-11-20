@@ -44,6 +44,40 @@ namespace HoverTranslate
             "DataGrid", "Tree", "ToolBar", "Menu", "ScrollBar", "TitleBar", "Header"
         };
 
+        /// <summary>取当前焦点控件的选中文本，用于「选中即解释」。</summary>
+        public static string GetSelectedText()
+        {
+            try
+            {
+                AutomationElement focused = AutomationElement.FocusedElement;
+                if (focused == null) return null;
+
+                object pat = focused.GetCurrentPattern(TextPattern.Pattern);
+                if (pat == null) return null;
+
+                MethodInfo getSelection = pat.GetType().GetMethod("GetSelection", Type.EmptyTypes);
+                if (getSelection == null) return null;
+
+                object rangesObj = getSelection.Invoke(pat, null);
+                System.Collections.IEnumerable ranges = rangesObj as System.Collections.IEnumerable;
+                if (ranges == null) return null;
+
+                var sb = new System.Text.StringBuilder();
+                foreach (object r in ranges)
+                {
+                    if (r == null) continue;
+                    MethodInfo getText = r.GetType().GetMethod("GetText");
+                    if (getText == null) continue;
+                    object txt = getText.Invoke(r, new object[] { -1 });
+                    if (txt != null) sb.Append(txt.ToString()).Append(' ');
+                }
+
+                string s = sb.ToString().Trim();
+                return s.Length > 0 ? s : null;
+            }
+            catch { return null; }
+        }
+
         public static GrabResult Grab(int x, int y, int maxLen)
         {
             var result = new GrabResult { X = x, Y = y };
