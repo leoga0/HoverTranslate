@@ -239,6 +239,90 @@ final class Translator {
         return r
     }
 
+    // MARK: - 按目标语言翻译
+
+    /// 只翻非目标语言的部分，目标语言原样保留。整句已是目标语言时 shouldShow=false。
+    func translateForTarget(_ text: String, targetLang: String) -> MixedOutcome {
+        var outcome = MixedOutcome()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        outcome.source = trimmed
+        if trimmed.isEmpty {
+            outcome.error = "空文本"
+            return outcome
+        }
+
+        if targetLang == "both" {
+            let r = translate(trimmed, dir: .auto)
+            outcome.shouldShow = true
+            outcome.success = r.success
+            outcome.target = r.target
+            outcome.from = r.from
+            outcome.to = r.to
+            outcome.engine = r.engine
+            outcome.error = r.error
+            outcome.translatedParts = r.success ? 1 : 0
+            return outcome
+        }
+
+        let targetIsCjk = targetLang == "zh"
+        let from = targetIsCjk ? "en" : "zh"
+        let to = targetIsCjk ? "zh" : "en"
+
+        var pieces: [String] = []
+        var translated = 0
+        var engine = ""
+        var lastError = ""
+        var usedFrom = from
+        var usedTo = to
+
+        for seg in LangSplitter.split(trimmed) {
+            let isTargetLang = seg.isCjk == targetIsCjk
+            if isTargetLang || !seg.isTranslatable {
+                pieces.append(seg.text)
+                continue
+            }
+
+            let core = seg.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // 段尾的空白要保留，中文译文才不会被挤成一片
+            let trailing = core.isEmpty ? seg.text : String(seg.text.dropFirst(core.count))
+
+            let r = translate(core, from: from, to: to)
+            if r.success && !r.target.isEmpty {
+                pieces.append(r.target + trailing)
+                translated += 1
+                engine = r.engine
+                usedFrom = r.from
+                usedTo = r.to
+            } else {
+                pieces.append(seg.text)
+                if !r.error.isEmpty { lastError = r.error }
+            }
+        }
+
+        outcome.translatedParts = translated
+        outcome.success = translated > 0
+        outcome.shouldShow = translated > 0
+        outcome.target = pieces.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        outcome.from = usedFrom
+        outcome.to = usedTo
+        outcome.engine = engine
+        if translated == 0 {
+            outcome.error = lastError.isEmpty ? "没有需要翻译的内容" : lastError
+        }
+
+        // 译文和原文一样就别弹卡片
+        if outcome.shouldShow {
+            let a = squash(outcome.target)
+            let b = squash(trimmed)
+            if a == b { outcome.shouldShow = false }
+        }
+        return outcome
+    }
+
+    private func squash(_ s: String) -> String {
+        return String(s.filter { !$0.isWhitespace })
+    }
+
     // MARK: - 编码
 
     private func esc(_ s: String) -> String {
@@ -287,5 +371,103 @@ final class Translator {
         task.resume()
         _ = sem.wait(timeout: .now() + 10)
         return payload
+    }
+}
+
+// MARK: - 语言分段
+
+struct LangSegment {
+    var text: String
+    var isCjk: Bool
+    var isTranslatable: Bool
+}
+
+struct MixedOutcome {
+    var shouldShow = false
+    var success = false
+    var source = ""
+    var target = ""
+    var from = ""
+    var to = ""
+    var engine = ""
+    var error = ""
+    var translatedParts = 0
+}
+
+enum LangSplitter {
+
+    static func isCjk(_ c: Character) -> Bool {
+        for scalar in c.unicodeScalars {
+            let v = scalar.value
+            if (0x3400...0x4DBF).contains(v) || (0x4E00...0x9FFF).contains(v)
+                || (0xF900...0xFAFF).contains(v) || (0x3040...0x30FF).contains(v)
+                || (0xAC00...0xD7AF).contains(v) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// 0 = 中性（数字标点空白）, 1 = 中日韩, 2 = 其它语言字母
+    private static func classOf(_ c: Character) -> Int {
+        guard c.isLetter else { return 0 }
+        return isCjk(c) ? 1 : 2
+    }
+
+    private static func translatable(_ text: String, isCjk: Bool) -> Bool {
+        if isCjk {
+            return text.contains { LangSplitter.isCjk($0) }
+        }
+        let letters = text.reduce(0) { $0 + ($1.isLetter ? 1 : 0) }
+        return letters >= 2
+    }
+
+    static func split(_ text: String) -> [LangSegment] {
+        var result: [LangSegment] = []
+        var buffer = ""
+        var current = 0
+
+        func flush() {
+            if buffer.isEmpty { return }
+            result.append(LangSegment(text: buffer, isCjk: current == 1,
+                                      isTranslatable: translatable(buffer, isCjk: current == 1)))
+            buffer = ""
+        }
+
+        for ch in text {
+            let cls = classOf(ch)
+            if cls == 0 {
+                buffer.append(ch)
+                continue
+            }
+            if current == 0 {
+                current = cls
+                buffer.append(ch)
+                continue
+            }
+            if cls == current {
+                buffer.append(ch)
+                continue
+            }
+            flush()
+            current = cls
+            buffer.append(ch)
+        }
+        flush()
+
+        var merged: [LangSegment] = []
+        for s in result {
+            if !merged.isEmpty && s.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                merged[merged.count - 1].text += s.text
+            } else {
+                merged.append(s)
+            }
+        }
+        return merged
+    }
+
+    /// 本地判断：这段文本里有多少片段需要翻译（不发网络请求）
+    static func countTranslatable(_ text: String, targetIsCjk: Bool) -> Int {
+        return split(text).filter { $0.isCjk != targetIsCjk && $0.isTranslatable }.count
     }
 }
