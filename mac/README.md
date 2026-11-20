@@ -2,7 +2,17 @@
 
 鼠标停在屏幕上的文字处，约 0.34 秒后自动弹出译文卡片。不选中、不复制、不切换窗口。
 
-## 构建
+## 直接用现成的
+
+不想编译的话，去 [Releases](https://github.com/leoga0/HoverTranslate/releases) 下载 `HoverTranslate-macos.zip`，解压后把 `HoverTranslate.app` 拖进「应用程序」。
+
+应用是 ad-hoc 签名的，第一次打开会被 Gatekeeper 拦一下：在「应用程序」里右键点它 → 打开 → 再点「打开」。或者终端执行：
+
+```bash
+xattr -cr /Applications/HoverTranslate.app
+```
+
+## 自己构建
 
 需要 macOS 11 以上，以及 Xcode Command Line Tools。
 
