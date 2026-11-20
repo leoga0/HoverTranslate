@@ -343,6 +343,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 整段都已经是目标语言时不翻译；手动快捷键不受限制。
     private func shouldTranslate(_ text: String, manual: Bool) -> Bool {
         if manual { return true }
+        // 命中技术术语就值得弹，哪怕整段都是中文、哪怕不需要翻译
+        if !Terminology.match(text, max: 1).isEmpty { return true }
         if config.targetLang == "both" { return true }
         return LangSplitter.countTranslatable(text, targetIsCjk: config.targetLang == "zh") > 0
     }
@@ -397,6 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 r.engine = m.engine
                 r.error = m.error
                 self.panel.showResult(r)
+                self.panel.showTerms(m.terms)
                 self.scheduleDim()
             }
         }
