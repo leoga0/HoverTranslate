@@ -17,8 +17,8 @@ namespace HoverTranslate
     /// </summary>
     public class CardWindow : Window
     {
-        private const double MaxCardWidth = 440;
-        private const double TextMaxWidth = 414;
+        private const double MaxCardWidth = 420;
+        private const double TextMaxWidth = 396;
 
         private readonly Border _root;
         private readonly TextBlock _pair;
@@ -58,7 +58,7 @@ namespace HoverTranslate
             ResizeMode = ResizeMode.NoResize;
             SizeToContent = SizeToContent.Manual;
             Width = MaxCardWidth;
-            Height = 60;
+            Height = 80;
             WindowStartupLocation = WindowStartupLocation.Manual;
             Opacity = 0;
 
@@ -164,7 +164,6 @@ namespace HoverTranslate
                     Opacity = 0.18,
                     Color = Colors.Black
                 },
-                MinWidth = 88,
                 MaxWidth = MaxCardWidth
             };
 
@@ -380,18 +379,24 @@ namespace HoverTranslate
         {
             if (!IsVisible) return;
 
-            // 用卡片最大宽度去量，换行位置才和最终渲染一致；无限宽度量出来会偏矮
-            _root.Measure(new Size(MaxCardWidth, double.PositiveInfinity));
-            _root.Arrange(new Rect(0, 0, _root.DesiredSize.Width, _root.DesiredSize.Height));
+            // 宽度固定：一旦按内容收缩，测量用的宽度和实际渲染宽度就会不一致，
+            // 越高越窄、越窄越高，最后挤成一条竖排。固定宽度后高度才是准的。
+            double cardW = MaxCardWidth;
+            _root.Width = cardW - 2;
 
-            double w = Math.Min(MaxCardWidth, Math.Max(88, Math.Ceiling(_root.DesiredSize.Width) + 2));
-            double h = Math.Max(40, Math.Ceiling(_root.ActualHeight) + 30);
-            if (double.IsNaN(w) || double.IsNaN(h)) return;
+            // 刚刚改过 Visibility / 加过子元素，必须作废旧的测量结果，否则拿到的是缓存高度
+            _root.InvalidateMeasure();
+            _root.InvalidateArrange();
+            _root.Measure(new Size(cardW - 2, double.PositiveInfinity));
+            _root.Arrange(new Rect(0, 0, cardW - 2, _root.DesiredSize.Height));
+
+            double h = Math.Max(56, Math.Ceiling(_root.DesiredSize.Height) + 6);
+            if (double.IsNaN(h)) return;
 
             double scale = Native.GetScaleForPoint(_anchorX, _anchorY);
             if (scale <= 0) scale = 1;
 
-            _wantW = (int)Math.Ceiling(w * scale);
+            _wantW = (int)Math.Ceiling(cardW * scale);
             _wantH = (int)Math.Ceiling(h * scale);
 
             Reposition();
