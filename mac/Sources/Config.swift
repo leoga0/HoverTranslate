@@ -56,6 +56,14 @@ final class Config {
         set { defaults.set(newValue, forKey: prefix + "targetLang") }
     }
 
+    var selectionExplain: Bool {
+        get {
+            if defaults.object(forKey: prefix + "selectionExplain") == nil { return true }
+            return defaults.bool(forKey: prefix + "selectionExplain")
+        }
+        set { defaults.set(newValue, forKey: prefix + "selectionExplain") }
+    }
+
     var cardAnchor: Int {
         get { return defaults.integer(forKey: prefix + "cardAnchor") }
         set { defaults.set(newValue, forKey: prefix + "cardAnchor") }
