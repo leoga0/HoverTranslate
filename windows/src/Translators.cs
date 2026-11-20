@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -342,6 +342,115 @@ namespace HoverTranslate
         }
     }
 
+    /// <summary>把一句话切成「中文片段」与「非中文片段」，用于混合语言只翻一半。</summary>
+    public static class LangSplitter
+    {
+        public class Seg
+        {
+            public string Text = "";
+            public bool IsCjk;
+            public bool IsTranslatable;
+        }
+
+        private static int ClassOf(char c)
+        {
+            int v = c;
+            if ((v >= 0x3400 && v <= 0x4DBF) || (v >= 0x4E00 && v <= 0x9FFF) ||
+                (v >= 0xF900 && v <= 0xFAFF) || (v >= 0x3040 && v <= 0x30FF) ||
+                (v >= 0xAC00 && v <= 0xD7AF))
+                return 1; // 中日韩
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) return 2;
+            if (char.IsLetter(c)) return 2; // 其它语言字母按非中文处理
+            return 0; // 数字、标点、空白
+        }
+
+        public static List<Seg> Split(string text)
+        {
+            var list = new List<Seg>();
+            if (string.IsNullOrEmpty(text)) return list;
+
+            var buf = new System.Text.StringBuilder();
+            int cur = 0;
+
+            Action flush = delegate
+            {
+                if (buf.Length == 0) return;
+                var s = new Seg { Text = buf.ToString(), IsCjk = cur == 1 };
+                s.IsTranslatable = IsTranslatable(s.Text, s.IsCjk);
+                list.Add(s);
+                buf.Length = 0;
+            };
+
+            foreach (char c in text)
+            {
+                int cls = ClassOf(c);
+                if (cls == 0)
+                {
+                    buf.Append(c);
+                    continue;
+                }
+                if (cur == 0) { cur = cls; buf.Append(c); continue; }
+                if (cls == cur) { buf.Append(c); continue; }
+                flush();
+                cur = cls;
+                buf.Append(c);
+            }
+            flush();
+
+            // 纯空白的段并到前一段，避免碎片
+            var merged = new List<Seg>();
+            foreach (var s in list)
+            {
+                if (merged.Count > 0 && s.Text.Trim().Length == 0)
+                {
+                    merged[merged.Count - 1].Text += s.Text;
+                }
+                else
+                {
+                    merged.Add(s);
+                }
+            }
+            return merged;
+        }
+
+        /// <summary>本地判断：这段文本里有多少片段需要被翻译（不发网络请求）。</summary>
+        public static int CountTranslatable(string text, bool targetIsCjk)
+        {
+            int n = 0;
+            foreach (Seg s in Split(text))
+            {
+                if (s.IsCjk == targetIsCjk) continue;
+                if (s.IsTranslatable) n++;
+            }
+            return n;
+        }
+
+        private static bool IsTranslatable(string text, bool isCjk)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            if (isCjk)
+            {
+                foreach (char c in text) if (ClassOf(c) == 1) return true;
+                return false;
+            }
+            int letters = 0;
+            foreach (char c in text) if (char.IsLetter(c)) letters++;
+            return letters >= 2;
+        }
+    }
+
+    public class MixedOutcome
+    {
+        public bool ShouldShow;
+        public bool Success;
+        public string Source = "";
+        public string Target = "";
+        public string From = "";
+        public string To = "";
+        public string Engine = "";
+        public string Error = "";
+        public int TranslatedParts;
+    }
     /// <summary>带缓存与降级链的翻译门面。</summary>
     public class TranslationService
     {
@@ -397,6 +506,103 @@ namespace HoverTranslate
             }
 
             return last ?? new TranslationResult { Error = "无可用翻译引擎" };
+        }
+
+        /// <summary>
+        /// 按「目标语言」翻译：只翻非目标语言的部分，目标语言原样保留。
+        /// 整句都已经是目标语言时返回 ShouldShow=false，调用方不该弹卡片。
+        /// </summary>
+        public MixedOutcome TranslateForTarget(string text, string targetLang)
+        {
+            var outcome = new MixedOutcome();
+            text = (text ?? "").Trim();
+            outcome.Source = text;
+            if (text.Length == 0) { outcome.Error = "空文本"; return outcome; }
+
+            if (targetLang == "both")
+            {
+                TranslationResult r = Translate(text, Direction.Auto);
+                outcome.ShouldShow = true;
+                outcome.Success = r.Success;
+                outcome.Target = r.Target;
+                outcome.From = r.From;
+                outcome.To = r.To;
+                outcome.Engine = r.Engine;
+                outcome.Error = r.Error;
+                outcome.TranslatedParts = r.Success ? 1 : 0;
+                return outcome;
+            }
+
+            bool targetIsCjk = targetLang == "zh";
+            string from = targetIsCjk ? "en" : "zh";
+            string to = targetIsCjk ? "zh" : "en";
+
+            List<LangSplitter.Seg> segs = LangSplitter.Split(text);
+            var pieces = new List<string>();
+            int translated = 0;
+            string engine = "";
+            string lastError = "";
+            string usedFrom = from;
+            string usedTo = to;
+
+            foreach (LangSplitter.Seg s in segs)
+            {
+                bool isTargetLang = s.IsCjk == targetIsCjk;
+                if (isTargetLang || !s.IsTranslatable)
+                {
+                    pieces.Add(s.Text);
+                    continue;
+                }
+
+                string core = s.Text.Trim();
+                string tail = s.Text.Substring(core.Length + (s.Text.Length - s.Text.TrimStart().Length));
+
+                TranslationResult r = Translate(core, from, to);
+                if (r != null && r.Success && !string.IsNullOrEmpty(r.Target))
+                {
+                    pieces.Add(r.Target + tail);
+                    translated++;
+                    engine = r.Engine;
+                    usedFrom = r.From;
+                    usedTo = r.To;
+                }
+                else
+                {
+                    pieces.Add(s.Text);
+                    if (r != null && !string.IsNullOrEmpty(r.Error)) lastError = r.Error;
+                }
+            }
+
+            outcome.TranslatedParts = translated;
+            outcome.Success = translated > 0;
+            outcome.ShouldShow = translated > 0;
+            outcome.Target = string.Concat(pieces).Trim();
+
+            // 译文和原文一样（比如 "API" 翻回 "API"）就别弹卡片，纯噪音
+            if (outcome.ShouldShow)
+            {
+                string a = Squash(outcome.Target);
+                string b = Squash(text);
+                if (a == b) outcome.ShouldShow = false;
+            }
+            outcome.From = usedFrom;
+            outcome.To = usedTo;
+            outcome.Engine = engine;
+            if (translated == 0)
+                outcome.Error = string.IsNullOrEmpty(lastError) ? "没有需要翻译的内容" : lastError;
+            return outcome;
+        }
+
+        private static string Squash(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            var sb = new System.Text.StringBuilder(s.Length);
+            foreach (char c in s)
+            {
+                if (char.IsWhiteSpace(c)) continue;
+                sb.Append(c);
+            }
+            return sb.ToString();
         }
 
         private void Remember(string key, TranslationResult r)
