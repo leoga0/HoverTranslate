@@ -37,7 +37,7 @@ final class Config {
 
     var showOriginal: Bool {
         get {
-            if defaults.object(forKey: prefix + "showOriginal") == nil { return true }
+            if defaults.object(forKey: prefix + "showOriginal") == nil { return false }
             return defaults.bool(forKey: prefix + "showOriginal")
         }
         set { defaults.set(newValue, forKey: prefix + "showOriginal") }
@@ -54,7 +54,7 @@ final class Config {
     var fontSize: CGFloat {
         get {
             let v = defaults.double(forKey: prefix + "fontSize")
-            return v <= 0 ? 15 : CGFloat(v)
+            return v <= 0 ? 14 : CGFloat(v)
         }
         set { defaults.set(Double(newValue), forKey: prefix + "fontSize") }
     }
