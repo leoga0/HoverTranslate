@@ -120,9 +120,9 @@ final class AiExplainer {
 
         lock.lock()
         if cache.count >= cacheLimit {
-            let drop = max(1, cacheLimit / 4)
+            let drop = Swift.max(1, cacheLimit / 4)
             for k in order.prefix(drop) { cache.removeValue(forKey: k) }
-            order.removeFirst(min(drop, order.count))
+            order.removeFirst(Swift.min(drop, order.count))
         }
         cache[key] = result
         order.append(key)
