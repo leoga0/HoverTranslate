@@ -5,7 +5,7 @@ import Cocoa
 /// 全部采用 frame 布局，尺寸随内容确定性变化。
 final class CardPanel: NSPanel {
 
-    static let cardWidth: CGFloat = 340
+    static let cardWidth: CGFloat = 420
 
     private let padX: CGFloat = 11
     private let padTop: CGFloat = 7
@@ -221,7 +221,7 @@ final class CardPanel: NSPanel {
         var shown = 0
 
         for term in terms {
-            if shown >= 2 { break }
+            if shown >= 3 { break }
 
             let head = NSTextField(labelWithString: term.c.isEmpty ? term.n : "\(term.n) · \(term.c)")
             head.font = NSFont.systemFont(ofSize: 9.5, weight: .semibold)
