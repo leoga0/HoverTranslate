@@ -6,6 +6,8 @@ Windows 与 macOS 双平台，中英双向翻译。
 
 ![译文卡片](docs/card.png)
 
+![Build macOS](https://github.com/leoga0/HoverTranslate/actions/workflows/build-macos.yml/badge.svg)
+
 ## 它解决什么问题
 
 读英文文档、看英文网页、处理外文合同时，传统做法是选中文字、复制、切到翻译网站、粘贴、切回来。一次两次还行，一天几十次就是纯浪费。
@@ -20,34 +22,48 @@ Windows 与 macOS 双平台，中英双向翻译。
 - 内容型取词：只翻正文，鼠标掠过按钮、菜单、标题栏不会乱弹
 - 三级引擎降级：腾讯交互翻译 → 有道 → MyMemory，主引擎响应 0.2-0.4 秒
 - 本地缓存：同一段文字重复悬停不重复请求
-- 单文件免安装（Windows），原生菜单栏应用（macOS）
+- 免安装：Windows 单文件 exe，macOS 单个 .app
 
 ## 下载与安装
 
-### Windows
+全部产物在 [Releases](https://github.com/leoga0/HoverTranslate/releases) 页面。
 
-下载 [Releases](https://github.com/leoga0/HoverTranslate/releases) 里的 `HoverTranslate.exe`，放到任意普通目录（例如 `D:\Tools\HoverTranslate\`），双击运行。
+| 平台 | 文件 | 安装方式 |
+| --- | --- | --- |
+| Windows 10 / 11 | `HoverTranslate.exe` | 放到任意普通目录，双击运行 |
+| macOS 11+ | `HoverTranslate-macos.zip` | 解压后把 `HoverTranslate.app` 拖进「应用程序」 |
+
+### Windows
 
 任务栏右下角出现蓝色「译」图标即已启动，程序常驻后台，没有主窗口。
 
 > 不要放在受策略管控的目录（例如某些沙箱工作区）下运行 —— 系统会把进程降为低完整性，此时读不到其他程序的界面文字。
 
-不确定的话直接从源码构建，见 [`windows/README.md`](windows/README.md)。
-
 ### macOS
 
-需要 macOS 11 以上和 Xcode Command Line Tools：
+应用是 ad-hoc 签名的，从网络下载后第一次打开会被 Gatekeeper 拦一下。两种处理方式：
+
+- 在「应用程序」里右键点 `HoverTranslate.app` → 打开 → 再点「打开」
+- 或者终端执行 `xattr -cr /Applications/HoverTranslate.app`
+
+首次运行还必须在「系统设置 → 隐私与安全性 → 辅助功能」里勾选 HoverTranslate，否则取不到文字。
+
+### 从源码构建
+
+Windows 不需要 Visual Studio，只用系统自带的 .NET Framework 编译器：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File windows\build.ps1
+```
+
+macOS 需要 Xcode Command Line Tools：
 
 ```bash
 xcode-select --install
-git clone https://github.com/leoga0/HoverTranslate.git
-cd HoverTranslate/mac
-bash build.sh
+cd mac && bash build.sh
 ```
 
-产物是 `mac/build/HoverTranslate.app`，拖进「应用程序」即可。首次运行需要在「系统设置 → 隐私与安全性 → 辅助功能」里勾选本程序。
-
-细节见 [`mac/README.md`](mac/README.md)。
+细节见 [`windows/README.md`](windows/README.md) 与 [`mac/README.md`](mac/README.md)。
 
 ## 用法
 
@@ -85,7 +101,7 @@ bash build.sh
 
 ### macOS
 
-用 Accessibility API：`AXUIElementCopyElementAtPosition` 定位光标下的元素，读 `AXValue` / `AXSelectedText` / `AXTitle` / `AXDescription`；读到容器就向下找子元素，仍为空则沿父链向上找。浮窗用 `NSPanel`（`.nonactivatingPanel`）实现。
+用 Accessibility API：`AXUIElementCopyElementAtPosition` 定位光标下的元素，读 `AXValue` / `AXSelectedText` / `AXTitle` / `AXDescription`；读到容器就向下找子元素，仍为空则沿父链向上找。浮窗用 `NSPanel`（`.nonactivatingPanel`）加 frame 布局实现。
 
 ## 翻译引擎
 
@@ -118,13 +134,13 @@ HoverTranslate/
 - 图片里的文字、扫描版 PDF、视频画面需要 OCR，当前版本不含
 - 以管理员权限运行的软件：普通权限启动的翻译器读不到它的界面
 - 全屏独占的游戏取不到
-- macOS 版的多显示器定位在分辨率差异极大的场景下可能偏差十几像素
+- macOS 版多显示器且分辨率差异极大时，卡片定位可能偏差十几像素
 
 取不到文字时，选中文字后按快捷键，或先复制再按快捷键。
 
 ## 反馈
 
-开 issue 就行，附上系统版本和复现步骤。macOS 版还没在真机验证过编译，报错请把终端里的完整错误贴上来。
+开 issue 就行，附上系统版本和复现步骤。macOS 版由 GitHub Actions 在 macOS 上编译验证，运行行为仍需更多真机反馈。
 
 ## License
 
