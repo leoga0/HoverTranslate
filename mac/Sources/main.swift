@@ -243,9 +243,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if panel.containsQuartzPoint(p) {
+            panel.setDim(false)
+            return
+        }
         if !config.hoverEnabled { return }
         if busy { return }
-        if panel.containsQuartzPoint(p) { return }
 
         let still = Date().timeIntervalSince(stillSince)
         if still < config.hoverDelay { return }
@@ -262,7 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if panel.containsQuartzPoint(p) { return }
         let dx = p.x - lastTrigger.x
         let dy = p.y - lastTrigger.y
-        if dx * dx + dy * dy > 170 * 170 {
+        if dx * dx + dy * dy > 90 * 90 {
             panel.hideCard()
         }
     }
@@ -299,6 +302,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 结果稳定后把卡片压到背景；鼠标移上去会恢复。
+    private func scheduleDim() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) {
+            guard self.panel.isVisible, self.panel.hasResult else { return }
+            let p = self.mouseQuartz()
+            if !self.panel.containsQuartzPoint(p) {
+                self.panel.setDim(true)
+            }
+        }
+    }
+
     private func handle(text: String, at p: NSPoint, manual: Bool) {
         if text.isEmpty {
             if manual {
@@ -326,6 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 if req != self.requestId { return }
                 self.panel.showResult(r)
+                self.scheduleDim()
             }
         }
     }
