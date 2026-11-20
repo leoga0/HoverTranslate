@@ -403,6 +403,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let p = mouseQuartz()
         panelTag = text
         requestId += 1
+        lastTrigger = p
+        suppressHoverUntil = Date().addingTimeInterval(2.5)
 
         panel.darkTheme = config.darkTheme
         panel.fontSize = config.fontSize
@@ -434,6 +436,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.panel.showResult(r)
                 self.panel.showTerms(m.terms)
                 self.scheduleDim()
+
+                // 本地术语库覆盖不到的，联网让模型用大白话讲一遍
+                if m.terms.count < 2 && AiExplainer.shared.available {
+                    let probe = text
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let extra = AiExplainer.shared.explain(probe, max: 2 - m.terms.count)
+                        if extra.isEmpty { return }
+                        DispatchQueue.main.async {
+                            if req != self.requestId { return }
+                            self.panel.showTerms(m.terms + extra)
+                        }
+                    }
+                }
             }
         }
     }
