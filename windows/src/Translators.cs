@@ -450,6 +450,8 @@ namespace HoverTranslate
         public string Engine = "";
         public string Error = "";
         public int TranslatedParts;
+        public System.Collections.Generic.List<Terminology.Term> Terms =
+            new System.Collections.Generic.List<Terminology.Term>();
     }
     /// <summary>带缓存与降级链的翻译门面。</summary>
     public class TranslationService
@@ -519,10 +521,13 @@ namespace HoverTranslate
             outcome.Source = text;
             if (text.Length == 0) { outcome.Error = "空文本"; return outcome; }
 
+            // 命中技术术语就先记下来，后面无论译文有没有变化都要把它讲清楚
+            outcome.Terms = Terminology.Match(text, 2);
+
             if (targetLang == "both")
             {
                 TranslationResult r = Translate(text, Direction.Auto);
-                outcome.ShouldShow = true;
+                outcome.ShouldShow = r.Success || outcome.Terms.Count > 0;
                 outcome.Success = r.Success;
                 outcome.Target = r.Target;
                 outcome.From = r.From;
@@ -578,12 +583,12 @@ namespace HoverTranslate
             outcome.ShouldShow = translated > 0;
             outcome.Target = string.Concat(pieces).Trim();
 
-            // 译文和原文一样（比如 "API" 翻回 "API"）就别弹卡片，纯噪音
+            // 译文和原文一样（比如 "API" 翻回 "API"）就别弹卡片；但命中了术语要留下，解释本身有价值
             if (outcome.ShouldShow)
             {
                 string a = Squash(outcome.Target);
                 string b = Squash(text);
-                if (a == b) outcome.ShouldShow = false;
+                if (a == b && outcome.Terms.Count == 0) outcome.ShouldShow = false;
             }
             outcome.From = usedFrom;
             outcome.To = usedTo;
