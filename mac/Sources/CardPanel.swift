@@ -19,6 +19,8 @@ final class CardPanel: NSPanel {
     private let footerField = NSTextField(labelWithString: "")
     private let closeButton = NSButton()
     private let divider = NSView()
+    private let termDivider = NSView()
+    private var termRows: [(NSTextField, NSTextField)] = []
 
     private var anchorQuartz = NSPoint.zero
     private(set) var translated = ""
@@ -98,6 +100,10 @@ final class CardPanel: NSPanel {
         footerField.lineBreakMode = .byTruncatingTail
         footerField.isHidden = true
         container.addSubview(footerField)
+
+        termDivider.wantsLayer = true
+        termDivider.isHidden = true
+        container.addSubview(termDivider)
     }
 
     // MARK: - 主题
@@ -128,6 +134,9 @@ final class CardPanel: NSPanel {
         divider.layer?.backgroundColor = (darkTheme
             ? NSColor(calibratedWhite: 1.0, alpha: 0.08)
             : NSColor(calibratedWhite: 0.0, alpha: 0.07)).cgColor
+        termDivider.layer?.backgroundColor = (darkTheme
+            ? NSColor(calibratedWhite: 1.0, alpha: 0.07)
+            : NSColor(calibratedWhite: 0.0, alpha: 0.06)).cgColor
 
         closeButton.contentTintColor = darkTheme
             ? NSColor(calibratedWhite: 1.0, alpha: 0.22)
@@ -150,6 +159,7 @@ final class CardPanel: NSPanel {
             : NSColor(calibratedWhite: 0.35, alpha: 0.8)
         footerField.stringValue = ""
         footerField.isHidden = true
+        showTerms([])
         present()
     }
 
@@ -192,6 +202,52 @@ final class CardPanel: NSPanel {
         footerField.stringValue = detail
         footerField.isHidden = detail.isEmpty
         present()
+    }
+
+    /// 在译文下方补术语解释：一句话讲清楚，再打个比方。
+    func showTerms(_ terms: [Terminology.Term]) {
+        for pair in termRows {
+            pair.0.removeFromSuperview()
+            pair.1.removeFromSuperview()
+        }
+        termRows.removeAll()
+
+        guard !terms.isEmpty, let container = contentView else {
+            termDivider.isHidden = true
+            return
+        }
+
+        let contentW = CardPanel.cardWidth - padX * 2
+        var shown = 0
+
+        for term in terms {
+            if shown >= 2 { break }
+
+            let head = NSTextField(labelWithString: term.c.isEmpty ? term.n : "\(term.n) · \(term.c)")
+            head.font = NSFont.systemFont(ofSize: 9.5, weight: .semibold)
+            head.textColor = darkTheme
+                ? NSColor(calibratedRed: 0.59, green: 0.75, blue: 1.0, alpha: shown == 0 ? 0.85 : 0.6)
+                : NSColor(calibratedRed: 0.16, green: 0.35, blue: 0.67, alpha: shown == 0 ? 0.95 : 0.7)
+            head.maximumNumberOfLines = 1
+            container.addSubview(head)
+
+            var bodyText = term.d
+            if !term.x.isEmpty { bodyText += "\n" + term.x }
+
+            let body = NSTextField(wrappingLabelWithString: bodyText)
+            body.font = NSFont.systemFont(ofSize: 11)
+            body.preferredMaxLayoutWidth = contentW
+            body.maximumNumberOfLines = 0
+            body.textColor = darkTheme
+                ? NSColor(calibratedWhite: 0.89, alpha: shown == 0 ? 0.9 : 0.65)
+                : NSColor(calibratedWhite: 0.22, alpha: shown == 0 ? 0.95 : 0.75)
+            container.addSubview(body)
+
+            termRows.append((head, body))
+            shown += 1
+        }
+
+        termDivider.isHidden = termRows.isEmpty
     }
 
     private func compactPair(_ r: TranslationResult) -> String {
@@ -239,9 +295,22 @@ final class CardPanel: NSPanel {
             font: footerField.font ?? NSFont.systemFont(ofSize: 9.5),
             width: contentW, maxLines: 1) : 0
 
+        var termTotal: CGFloat = 0
+        if !termRows.isEmpty {
+            termTotal = 1 + 5
+            for (i, pair) in termRows.enumerated() {
+                if i > 0 { termTotal += 6 }
+                termTotal += 13 + 1
+                termTotal += textHeight(pair.1.stringValue,
+                                        font: pair.1.font ?? NSFont.systemFont(ofSize: 11),
+                                        width: contentW, maxLines: 0)
+            }
+        }
+
         var total = padTop + headerH + gap + dividerH + gap
         if sourceH > 0 { total += sourceH + 5 }
         total += targetH
+        total += termTotal > 0 ? termTotal + 5 : 0
         if footerH > 0 { total += footerH + 5 }
         total += padBottom
 
@@ -268,6 +337,22 @@ final class CardPanel: NSPanel {
 
         targetField.frame = NSRect(x: padX, y: top - targetH, width: contentW, height: targetH)
         top -= targetH + 5
+
+        if !termRows.isEmpty {
+            termDivider.frame = NSRect(x: padX, y: top - 1, width: contentW, height: 1)
+            top -= 1 + 5
+
+            for (i, pair) in termRows.enumerated() {
+                if i > 0 { top -= 6 }
+                pair.0.frame = NSRect(x: padX, y: top - 13, width: contentW, height: 13)
+                top -= 13 + 1
+                let bh = textHeight(pair.1.stringValue,
+                                    font: pair.1.font ?? NSFont.systemFont(ofSize: 11),
+                                    width: contentW, maxLines: 0)
+                pair.1.frame = NSRect(x: padX, y: top - bh, width: contentW, height: bh)
+                top -= bh
+            }
+        }
 
         if footerH > 0 {
             footerField.frame = NSRect(x: padX, y: top - footerH, width: contentW, height: footerH)
