@@ -522,7 +522,7 @@ namespace HoverTranslate
             if (text.Length == 0) { outcome.Error = "空文本"; return outcome; }
 
             // 命中技术术语就先记下来，后面无论译文有没有变化都要把它讲清楚
-            outcome.Terms = Terminology.Match(text, 2);
+            outcome.Terms = Terminology.Match(text, 3);
 
             if (targetLang == "both")
             {
