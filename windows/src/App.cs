@@ -560,6 +560,7 @@ namespace HoverTranslate
                         Error = m.Error
                     };
                     _card.ShowResult(r, _cfg.ShowOriginal);
+                    _card.ShowTerms(m.Terms);
                     ScheduleAutoDim();
                     if (!_cfg.HoverEnabled) AutoHide(2200);
                 }));
@@ -586,6 +587,8 @@ namespace HoverTranslate
         private bool ShouldTranslateText(string text, bool manual)
         {
             if (manual) return true;
+            // 命中技术术语就值得弹，哪怕整段都是中文、哪怕不需要翻译
+            if (Terminology.Match(text, 1).Count > 0) return true;
             if (_cfg.TargetLang == "both") return true;
             bool targetIsCjk = _cfg.TargetLang == "zh";
             return LangSplitter.CountTranslatable(text, targetIsCjk) > 0;
