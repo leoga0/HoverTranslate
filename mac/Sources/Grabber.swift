@@ -21,6 +21,27 @@ enum Grabber {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
+    /// 取当前焦点控件的选中文本，用于「选中即解释」。
+    static func selectedText() -> String? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axApp, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
+              let focused = focusedRef,
+              CFGetTypeID(focused) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        let element = unsafeBitCast(focused, to: AXUIElement.self)
+
+        var selRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextAttribute as CFString, &selRef) == .success,
+              let raw = selRef as? String else { return nil }
+
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     /// - Parameters:
     ///   - x/y: Quartz 全局坐标（左上角原点，y 向下）
     static func grab(x: CGFloat, y: CGFloat, maxLen: Int) -> GrabResult {
