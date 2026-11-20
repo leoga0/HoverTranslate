@@ -15,6 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var busy = false
     private var requestId = 0
     private var lastText = ""
+    private var tickCount = 0
+    private var panelTag: String?
+    private var lastSelection: String?
+    private var selectionTimer: Timer?
+    private var selProbeBusy = false
+    private var explainingSelection = false
+    private var suppressHoverUntil = Date.distantPast
 
     private var hoverMenuItem: NSMenuItem!
     private var dirItems: [NSMenuItem] = []
@@ -90,6 +97,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         targetMenu.submenu = targetSub
         menu.addItem(targetMenu)
 
+        let selItem = NSMenuItem(title: "选中即解释", action: #selector(toggleSelectionExplain), keyEquivalent: "")
+        selItem.target = self
+        selItem.state = config.selectionExplain ? .on : .off
+        menu.addItem(selItem)
+
         let posMenu = NSMenuItem(title: "卡片位置", action: nil, keyEquivalent: "")
         let posSub = NSMenu()
         let posTitles = ["鼠标左上方（不挡下文）", "鼠标右侧", "固定右下角"]
@@ -151,6 +163,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in dirItems {
             item.state = item.tag == sender.tag ? .on : .off
         }
+    }
+
+    @objc private func toggleSelectionExplain(_ sender: NSMenuItem) {
+        config.selectionExplain = !config.selectionExplain
+        sender.state = config.selectionExplain ? .on : .off
     }
 
     @objc private func setAnchor(_ sender: NSMenuItem) {
@@ -261,6 +278,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func tick() {
+        tickCount += 1
+        if config.selectionExplain && tickCount % 4 == 0 && !selProbeBusy {
+            selProbeBusy = true
+            DispatchQueue.global(qos: .utility).async {
+                let sel = Grabber.selectedText()
+                DispatchQueue.main.async {
+                    self.selProbeBusy = false
+                    self.handleSelectionProbe(sel)
+                }
+            }
+        }
+
         let p = mouseQuartz()
 
         if p != lastPos {
@@ -276,6 +305,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if !config.hoverEnabled { return }
         if busy { return }
+        if explainingSelection { return }
+        if Date() < suppressHoverUntil { return }
 
         let still = Date().timeIntervalSince(stillSince)
         if still < config.hoverDelay { return }
@@ -336,6 +367,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let p = self.mouseQuartz()
             if !self.panel.containsQuartzPoint(p) {
                 self.panel.setDim(true)
+            }
+        }
+    }
+
+    // MARK: - 选中即解释
+
+    private func handleSelectionProbe(_ sel: String?) {
+        if sel == lastSelection { return }
+        lastSelection = sel
+
+        selectionTimer?.invalidate()
+        guard let s = sel, s.count >= 2, s.count <= 80 else { return }
+
+        selectionTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { _ in
+            self.onSelectionSettled()
+        }
+        if let t = selectionTimer { RunLoop.main.add(t, forMode: .common) }
+    }
+
+    private func onSelectionSettled() {
+        selectionTimer?.invalidate()
+        selectionTimer = nil
+
+        guard let text = lastSelection, text.count >= 2 else { return }
+        if panel.isVisible && panelTag == text { return }
+        explainSelection(text)
+    }
+
+    /// 用户主动选中一段内容，就直接解释，不再走语言门槛。
+    private func explainSelection(_ text: String) {
+        explainingSelection = true
+        suppressHoverUntil = Date().addingTimeInterval(2.5)
+
+        let p = mouseQuartz()
+        panelTag = text
+        requestId += 1
+
+        panel.darkTheme = config.darkTheme
+        panel.fontSize = config.fontSize
+        panel.showOriginal = config.showOriginal
+        panel.cardAnchor = config.cardAnchor
+        panel.appliesTheme()
+        panel.showLoading(source: text, pair: targetLabel(), quartzX: p.x, quartzY: p.y)
+
+        let req = requestId
+        let target = config.targetLang
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let m = self.translator.translateForTarget(text, targetLang: target)
+            DispatchQueue.main.async {
+                self.explainingSelection = false
+                if req != self.requestId { return }
+                if !m.shouldShow {
+                    self.panel.hideCard()
+                    return
+                }
+                var r = TranslationResult()
+                r.success = m.success
+                r.source = m.source
+                r.target = m.target
+                r.from = m.from
+                r.to = m.to
+                r.engine = m.engine
+                r.error = m.error
+                self.panel.showResult(r)
+                self.panel.showTerms(m.terms)
+                self.scheduleDim()
             }
         }
     }
