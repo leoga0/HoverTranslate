@@ -26,6 +26,7 @@ final class CardPanel: NSPanel {
     private var dimmed = false
 
     var darkTheme = true
+    var cardAnchor = 0
     var fontSize: CGFloat = 14
     var showOriginal = false
 
@@ -283,25 +284,48 @@ final class CardPanel: NSPanel {
 
     // MARK: - 定位
 
-    /// 放在鼠标右侧、垂直与鼠标对齐，避免压住鼠标下方正在读的下一行。
+    /// 卡片定位。默认放鼠标左上方——那里是已经读过的内容，不会挡住后面和下面的句子。
+    /// 放不下时按 右上 → 左下 → 右下 的顺序找位置；也可以固定到屏幕右下角。
     func reposition() {
         guard let first = NSScreen.screens.first else { return }
         let size = frame.size
         let mainHeight = first.frame.height
-
         let cocoaY = mainHeight - anchorQuartz.y
-        let gapX: CGFloat = 22
+        let margin: CGFloat = 8
+        let gap: CGFloat = 16
 
-        var x = anchorQuartz.x + gapX
-        var y = cocoaY - size.height / 2
+        var x: CGFloat = 0
+        var y: CGFloat = 0
 
         let probe = NSPoint(x: anchorQuartz.x, y: cocoaY)
-        if let screen = screenContaining(probe) {
-            let visible = screen.visibleFrame
-            if x + size.width > visible.maxX - 8 { x = anchorQuartz.x - size.width - gapX }
-            if x < visible.minX + 8 { x = visible.minX + 8 }
-            if y + size.height > visible.maxY - 8 { y = visible.maxY - size.height - 8 }
-            if y < visible.minY + 8 { y = visible.minY + 8 }
+        let visible = (screenContaining(probe) ?? first).visibleFrame
+
+        if cardAnchor == 2 {
+            x = visible.maxX - size.width - 16
+            y = visible.minY + 16
+        } else if cardAnchor == 1 {
+            x = anchorQuartz.x + gap + 6
+            y = cocoaY - size.height / 2
+            if x + size.width > visible.maxX - margin {
+                x = anchorQuartz.x - size.width - gap - 6
+            }
+        } else {
+            let leftX = anchorQuartz.x - size.width - gap
+            let rightX = anchorQuartz.x + gap
+            let upY = cocoaY + gap
+            let downY = cocoaY - size.height - gap
+
+            x = leftX
+            y = upY
+
+            if x < visible.minX + margin { x = rightX }
+            if x + size.width > visible.maxX - margin { x = leftX }
+            if y + size.height > visible.maxY - margin { y = downY }
+            if y < visible.minY + margin { y = upY }
+
+            if x < visible.minX + margin { x = visible.minX + margin }
+            if x + size.width > visible.maxX - margin { x = visible.maxX - size.width - margin }
+            if y < visible.minY + margin { y = visible.minY + margin }
         }
 
         setFrameOrigin(NSPoint(x: x, y: y))
