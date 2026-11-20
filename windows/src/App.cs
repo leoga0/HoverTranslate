@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -74,6 +74,7 @@ namespace HoverTranslate
             _service = new TranslationService();
 
             _card = new CardWindow();
+            _card.QuietMode = _cfg.QuietMode;
             _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
             AppConfig.Log("card ok");
 
@@ -122,6 +123,10 @@ namespace HoverTranslate
             var miFontMid = new Forms.ToolStripMenuItem("中字号", null, (s, e) => SetFont(15));
             var miFontSmall = new Forms.ToolStripMenuItem("小字号", null, (s, e) => SetFont(13));
             var miShowSrc = new Forms.ToolStripMenuItem("显示原文", null, (s, e) => ToggleSource());
+            var miQuiet = new Forms.ToolStripMenuItem("低调样式", null, (s, e) => ToggleQuiet());
+            miQuiet.Checked = _cfg.QuietMode;
+            var miAutoDim = new Forms.ToolStripMenuItem("闲置自动变淡", null, (s, e) => ToggleAutoDim());
+            miAutoDim.Checked = _cfg.AutoDim;
             miShowSrc.Checked = _cfg.ShowOriginal;
             themeMenu.DropDownItems.Add(_miDark);
             themeMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
@@ -130,6 +135,8 @@ namespace HoverTranslate
             themeMenu.DropDownItems.Add(miFontSmall);
             themeMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
             themeMenu.DropDownItems.Add(miShowSrc);
+            themeMenu.DropDownItems.Add(miQuiet);
+            themeMenu.DropDownItems.Add(miAutoDim);
 
             _miAutoStart = new Forms.ToolStripMenuItem("开机自动启动", null, (s, e) => ToggleAutoStart());
             _miAutoStart.Checked = IsAutoStartEnabled();
@@ -200,7 +207,7 @@ namespace HoverTranslate
             _cfg.DarkTheme = !_cfg.DarkTheme;
             _cfg.Save();
             _miDark.Checked = _cfg.DarkTheme;
-            _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
+            RefreshCardStyle();
         }
 
         private void ToggleSource()
@@ -210,11 +217,32 @@ namespace HoverTranslate
             ShowToast(_cfg.ShowOriginal ? "卡片显示原文" : "卡片隐藏原文");
         }
 
+        private void ToggleQuiet()
+        {
+            _cfg.QuietMode = !_cfg.QuietMode;
+            _cfg.Save();
+            RefreshCardStyle();
+            ShowToast(_cfg.QuietMode ? "低调样式" : "标准样式");
+        }
+
+        private void ToggleAutoDim()
+        {
+            _cfg.AutoDim = !_cfg.AutoDim;
+            _cfg.Save();
+            ShowToast(_cfg.AutoDim ? "闲置自动变淡" : "常亮显示");
+        }
+
+        private void RefreshCardStyle()
+        {
+            _card.QuietMode = _cfg.QuietMode;
+            _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
+        }
+
         private void SetFont(double size)
         {
             _cfg.FontSize = size;
             _cfg.Save();
-            _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
+            RefreshCardStyle();
         }
 
         private void ShowToast(string text)
@@ -383,7 +411,7 @@ namespace HoverTranslate
 
             long dx = (long)p.X - _lastTrigger.X;
             long dy = (long)p.Y - _lastTrigger.Y;
-            if (dx * dx + dy * dy <= 170L * 170L) return;
+            if (dx * dx + dy * dy <= 90L * 90L) return;
 
             _card.HideCard(false);
         }
@@ -476,9 +504,26 @@ namespace HoverTranslate
                     if (req != _requestId) return;
 
                     _card.ShowResult(r, _cfg.ShowOriginal);
+                    ScheduleAutoDim();
                     if (!_cfg.HoverEnabled) AutoHide(2200);
                 }));
             });
+        }
+
+        /// <summary>结果稳定后把卡片压到背景，避免一直抢注意力；鼠标移上去会恢复。</summary>
+        private void ScheduleAutoDim()
+        {
+            if (!_cfg.AutoDim) return;
+            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(2100) };
+            t.Tick += delegate
+            {
+                t.Stop();
+                if (_card.IsVisible && _card.HasResult && !_card.IsMouseOver)
+                {
+                    _card.SetDim(true);
+                }
+            };
+            t.Start();
         }
 
         private void AutoHide(int ms)
