@@ -17,6 +17,8 @@ namespace HoverTranslate
         public bool AutoStart { get; set; }
         public bool QuietMode { get; set; }
         public bool AutoDim { get; set; }
+        public string TargetLang { get; set; }
+        public int CardAnchor { get; set; }
         public string HotkeyTranslate { get; set; }
         public string HotkeySwitch { get; set; }
         public string HotkeyToggle { get; set; }
@@ -30,6 +32,8 @@ namespace HoverTranslate
             ShowOriginal = false;
             QuietMode = true;
             AutoDim = true;
+            TargetLang = "zh";
+            CardAnchor = 0;
             DarkTheme = true;
             FontSize = 15;
             AutoStart = false;
@@ -126,6 +130,9 @@ namespace HoverTranslate
             if (string.IsNullOrEmpty(HotkeySwitch)) HotkeySwitch = "Ctrl+Alt+D";
             if (string.IsNullOrEmpty(HotkeyToggle)) HotkeyToggle = "Ctrl+Alt+H";
             if (HoverDelayMs < 250) HoverDelayMs = 250;
+            if (string.IsNullOrEmpty(TargetLang)) TargetLang = "zh";
+            if (TargetLang != "zh" && TargetLang != "en" && TargetLang != "both") TargetLang = "zh";
+            if (CardAnchor < 0 || CardAnchor > 2) CardAnchor = 0;
         }
     }
 }
