@@ -180,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - 全局快捷键
 
     private func setupHotkeys() {
-        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+        _ = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags.contains(.control), flags.contains(.option) else { return }
             guard let key = event.charactersIgnoringModifiers?.lowercased() else { return }
@@ -281,16 +281,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let result = Grabber.grab(x: p.x, y: p.y, maxLen: maxLen)
             if result.found, TextShape.worth(result.text) {
                 text = result.text
-            } else if manual,
-                      let clip = NSPasteboard.general.string(forType: .string),
-                      TextShape.worth(clip) {
-                text = TextShape.clean(clip, maxLen: maxLen)
             }
+            let needClipboard = text.isEmpty && manual
 
             DispatchQueue.main.async {
                 self.busy = false
                 if req != self.requestId { return }
-                self.handle(text: text, at: p, manual: manual)
+
+                var finalText = text
+                if needClipboard,
+                   let clip = NSPasteboard.general.string(forType: .string),
+                   TextShape.worth(clip) {
+                    finalText = TextShape.clean(clip, maxLen: maxLen)
+                }
+                self.handle(text: finalText, at: p, manual: manual)
             }
         }
     }
