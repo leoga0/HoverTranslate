@@ -1,22 +1,24 @@
 name: Build macOS
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
     paths:
       - 'mac/**'
       - '.github/workflows/build-macos.yml'
-  workflow_dispatch:
 
 jobs:
   build-macos:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Swift version
-        run: swiftc --version
+      - name: Toolchain
+        run: |
+          sw_vers
+          swiftc --version
 
       - name: Build app
         run: |
@@ -26,7 +28,6 @@ jobs:
       - name: Inspect bundle
         run: |
           ls -la mac/build
-          ls -la mac/build/HoverTranslate.app/Contents/MacOS
           file mac/build/HoverTranslate.app/Contents/MacOS/HoverTranslate
 
       - name: Package
