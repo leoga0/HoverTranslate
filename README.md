@@ -166,6 +166,14 @@ HoverTranslate/
 └── docs/
 ```
 
+## 发布
+
+Windows 与 macOS 始终同步出包，一个 Release 必须同时带 `HoverTranslate.exe` 和 `HoverTranslate-macos.zip`。
+
+流程：改 `windows/src`（C#）或 `mac/Sources`（Swift）后推送 → 建 Release 并上传 Windows exe → GitHub Actions 的 `Build macOS` 会因 `release: published` 自动在 macos-latest 上编译，把 mac 包装到同一个 Release。只改 Windows 代码时也一样会重编 mac 包，不需要手动触发。
+
+手动补包：Actions 里跑 `Build macOS`，`release_tag` 填目标 tag。
+
 ## 已知限制
 
 - 图片里的文字、扫描版 PDF、视频画面需要 OCR，当前版本不含
