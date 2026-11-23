@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Windows.Threading;
@@ -294,6 +295,36 @@ namespace HoverTranslate
             Check("悬停中文命中术语时按解释展示", hoverZh.ExplainOnly && hoverZh.ShouldShow,
                   "ExplainOnly=" + hoverZh.ExplainOnly + " ShouldShow=" + hoverZh.ShouldShow);
             Check("这种情况不再报翻译失败", string.IsNullOrEmpty(hoverZh.Error), "Error='" + hoverZh.Error + "'");
+
+            // 15b. 卡片上移行数：默认 1 行，菜单三项，切换后写入配置
+            Check("默认上方多让 1 行", _cfg.LiftLines == 1, "LiftLines=" + _cfg.LiftLines);
+            Check("上方留白菜单三项", _miLift.Count == 3, "项数=" + _miLift.Count);
+            SetLift(0);
+            Check("可切到紧贴上方", _cfg.LiftLines == 0 && _miLift[0].Checked, "LiftLines=" + _cfg.LiftLines);
+            SetLift(1);
+
+            // 16. 长内容卡片高度必须装得下全部内容（曾出现只显示上半截）
+            _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
+            _card.ShowResult(new TranslationResult
+            {
+                Success = true,
+                Source = "第三行：卡片的宽度固定，高度应该按内容自动撑开，不能被裁掉一半，否则只能看到上半截文字，下面的术语解释全看不见。",
+                Target = "",
+                From = "zh",
+                To = "en",
+                Engine = "解释"
+            }, true);
+            _card.ShowTerms(new List<Terminology.Term>
+            {
+                new Terminology.Term { n = "私域", d = "能自己直接触达的用户池。", x = "像自己家的鱼塘。", c = "电商运营", i = "ec" },
+                new Terminology.Term { n = "复购率", d = "买过两次以上的人占比。", x = "像店的回头客。", c = "电商运营", i = "ec" }
+            });
+
+            double contentDip = _card.MeasureContentHeight();
+            double windowDip = _card.WantedHeightPx / (_card.UsedScale <= 0 ? 1 : _card.UsedScale);
+            Check("长内容时卡片高度装得下", windowDip + 2 >= contentDip,
+                  "窗口=" + Math.Round(windowDip, 1) + " 内容=" + contentDip);
+            _card.HideCard(true);
 
             Terminology.Domain = _cfg.Industry;
         }

@@ -38,6 +38,8 @@ namespace HoverTranslate
         private Forms.ToolStripMenuItem _miFontSmall;
         private Forms.ToolStripMenuItem _miAutoStart;
         private Forms.ToolStripMenuItem _indMenu;
+        private readonly System.Collections.Generic.Dictionary<int, Forms.ToolStripMenuItem> _miLift =
+            new System.Collections.Generic.Dictionary<int, Forms.ToolStripMenuItem>();
         private readonly System.Collections.Generic.Dictionary<string, Forms.ToolStripMenuItem> _miIndustry =
             new System.Collections.Generic.Dictionary<string, Forms.ToolStripMenuItem>(StringComparer.Ordinal);
 
@@ -121,6 +123,7 @@ namespace HoverTranslate
             _card.QuietMode = _cfg.QuietMode;
             _card.CardAnchor = _cfg.CardAnchor;
             _card.AutoDimEnabled = _cfg.AutoDim;
+            _card.LiftLines = _cfg.LiftLines;
             _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
             AppConfig.Log("card ok");
 
@@ -184,6 +187,14 @@ namespace HoverTranslate
             posMenu.DropDownItems.Add(_miAnchorMouse);
             posMenu.DropDownItems.Add(_miAnchorRight);
             posMenu.DropDownItems.Add(_miAnchorCorner);
+            posMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
+            foreach (int lines in new int[] { 0, 1, 2 })
+            {
+                int n = lines;
+                var item = new Forms.ToolStripMenuItem("上方多让 " + n + " 行", null, delegate { SetLift(n); });
+                _miLift[n] = item;
+                posMenu.DropDownItems.Add(item);
+            }
 
             var themeMenu = new Forms.ToolStripMenuItem("外观");
             _miDark = new Forms.ToolStripMenuItem("深色卡片", null, delegate { ToggleTheme(); });
@@ -283,6 +294,11 @@ namespace HoverTranslate
                 _miFontBig.Checked = Math.Abs(_cfg.FontSize - 17) < 0.5;
                 _miFontMid.Checked = Math.Abs(_cfg.FontSize - 15) < 0.5;
                 _miFontSmall.Checked = Math.Abs(_cfg.FontSize - 13) < 0.5;
+            }
+
+            foreach (var pair in _miLift)
+            {
+                pair.Value.Checked = pair.Key == _cfg.LiftLines;
             }
 
             foreach (var pair in _miIndustry)
@@ -413,6 +429,16 @@ namespace HoverTranslate
             ShowToast(mode == 0 ? "卡片在鼠标左上方" : (mode == 1 ? "卡片在鼠标右侧" : "卡片固定在右下角"));
         }
 
+        private void SetLift(int lines)
+        {
+            _cfg.LiftLines = lines < 0 ? 0 : (lines > 4 ? 4 : lines);
+            _cfg.Save();
+            _card.LiftLines = _cfg.LiftLines;
+            SyncMenu();
+            AppConfig.Log("menu liftLines -> " + _cfg.LiftLines);
+            ShowToast(_cfg.LiftLines == 0 ? "卡片紧贴光标上方" : "卡片上方多让 " + _cfg.LiftLines + " 行");
+        }
+
         private void ToggleHover()
         {
             _cfg.HoverEnabled = !_cfg.HoverEnabled;
@@ -491,6 +517,7 @@ namespace HoverTranslate
             _card.QuietMode = _cfg.QuietMode;
             _card.CardAnchor = _cfg.CardAnchor;
             _card.AutoDimEnabled = _cfg.AutoDim;
+            _card.LiftLines = _cfg.LiftLines;
             _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
         }
 

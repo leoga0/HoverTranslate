@@ -20,6 +20,8 @@ namespace HoverTranslate
         public string TargetLang { get; set; }
         public bool SelectionExplain { get; set; }
         public int CardAnchor { get; set; }
+        /// <summary>卡片放在光标上方时额外上移的行数，0~4。</summary>
+        public int LiftLines { get; set; }
         public string Industry { get; set; }
         public string HotkeyTranslate { get; set; }
         public string HotkeySwitch { get; set; }
@@ -37,6 +39,7 @@ namespace HoverTranslate
             TargetLang = "zh";
             SelectionExplain = true;
             CardAnchor = 0;
+            LiftLines = 1;
             Industry = "auto";
             DarkTheme = true;
             FontSize = 15;
@@ -148,6 +151,8 @@ namespace HoverTranslate
             if (string.IsNullOrEmpty(TargetLang)) TargetLang = "zh";
             if (TargetLang != "zh" && TargetLang != "en" && TargetLang != "both") TargetLang = "zh";
             if (CardAnchor < 0 || CardAnchor > 2) CardAnchor = 0;
+            if (LiftLines < 0) LiftLines = 0;
+            if (LiftLines > 4) LiftLines = 4;
             if (!IndustryTerms.IsKnownAny(Industry)) Industry = "auto";
         }
     }

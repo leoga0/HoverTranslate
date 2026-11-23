@@ -42,6 +42,10 @@ namespace HoverTranslate
         private RECT _avoid;
         private int _wantW = 360;
         private int _wantH = 60;
+        private double _scale = 1;
+
+        /// <summary>卡片放在光标上方时额外上移的行数，由配置决定（0 表示紧贴光标上方）。</summary>
+        public int LiftLines { get; set; }
 
         public bool IsPinned { get; set; }
         public bool QuietMode { get; set; }
@@ -426,16 +430,33 @@ namespace HoverTranslate
 
             double scale = Native.GetScaleForPoint(_anchorX, _anchorY);
             if (scale <= 0) scale = 1;
+            _scale = scale;
 
             _wantW = (int)Math.Ceiling(cardW * scale);
             _wantH = (int)Math.Ceiling(h * scale);
 
             Reposition();
 
+            // 字体、换行、术语行都是异步落定的，第一次量的高度可能偏小，卡片就只露出上半截。
+            // 布局完成后再量一次，比当前窗口高就补上去。
             Dispatcher.BeginInvoke(new Action(delegate
             {
                 if (!IsVisible) return;
-                Reposition();
+
+                _root.InvalidateMeasure();
+                _root.Measure(new Size(cardW - 2, double.PositiveInfinity));
+                double need = Math.Max(56, Math.Ceiling(_root.DesiredSize.Height) + 6);
+                int needH = (int)Math.Ceiling(need * _scale);
+
+                if (needH > _wantH + 1)
+                {
+                    _wantH = needH;
+                    Reposition();
+                }
+                else
+                {
+                    Reposition();
+                }
             }), DispatcherPriority.Loaded);
         }
 
@@ -480,6 +501,8 @@ namespace HoverTranslate
 
             int margin = 8;
             int gap = 16;
+            // 放光标上方时再抬两行，别盖住刚读过的两行
+            int lift = (int)Math.Round(Math.Max(0, LiftLines) * 22 * _scale);
             int x, y;
 
             if (CardAnchor == 2)
@@ -498,7 +521,7 @@ namespace HoverTranslate
                 // 左上优先，其次右上、左下、右下
                 int leftX = _anchorX - w - gap;
                 int rightX = _anchorX + gap;
-                int upY = _anchorY - h - gap;
+                int upY = _anchorY - h - gap - lift;
                 int downY = _anchorY + gap;
 
                 x = leftX;
@@ -522,7 +545,7 @@ namespace HoverTranslate
                 bool overlapY = y < _avoid.Bottom && y + h > _avoid.Top;
                 if (overlapX && overlapY)
                 {
-                    int up = _avoid.Top - h - gap;
+                    int up = _avoid.Top - h - gap - lift;
                     int down = _avoid.Bottom + gap;
                     if (up >= scr.Top + margin) y = up;
                     else if (down + h <= scr.Bottom - margin) y = down;
@@ -538,6 +561,20 @@ namespace HoverTranslate
         }
 
         // MARK: - 显隐与透明度
+
+        /// <summary>自检用：按当前内容重新量一次，返回内容高度（DIP）。</summary>
+        public double MeasureContentHeight()
+        {
+            _root.InvalidateMeasure();
+            _root.Measure(new Size(MaxCardWidth - 2, double.PositiveInfinity));
+            return Math.Ceiling(_root.DesiredSize.Height);
+        }
+
+        /// <summary>自检用：当前窗口计划高度（物理像素）。</summary>
+        public int WantedHeightPx { get { return _wantH; } }
+
+        /// <summary>自检用：这次摆位使用的缩放比。</summary>
+        public double UsedScale { get { return _scale; } }
 
         /// <summary>取词所在的文本块，卡片摆位时避开它，别压住正在读的那几行。</summary>
         public void SetAvoidRect(RECT r)
