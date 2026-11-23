@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panel = CardPanel()
         panel.cardAnchor = config.cardAnchor
+        panel.liftLines = config.liftLines
         panel.darkTheme = config.darkTheme
         panel.fontSize = config.fontSize
         panel.showOriginal = config.showOriginal
@@ -121,6 +122,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.state = config.cardAnchor == idx ? .on : .off
             posSub.addItem(item)
         }
+        posSub.addItem(NSMenuItem.separator())
+        for n in [0, 1, 2] {
+            let item = NSMenuItem(title: "上方多让 \(n) 行", action: #selector(setLiftLines(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = n
+            item.state = config.liftLines == n ? .on : .off
+            posSub.addItem(item)
+        }
         posMenu.submenu = posSub
         menu.addItem(posMenu)
 
@@ -186,6 +195,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 item.state = item.tag == sender.tag ? .on : .off
             }
         }
+    }
+
+    @objc private func setLiftLines(_ sender: NSMenuItem) {
+        guard let n = sender.representedObject as? Int else { return }
+        config.liftLines = min(4, max(0, n))
+        panel.liftLines = config.liftLines
+        if let menu = sender.menu {
+            for item in menu.items {
+                if let v = item.representedObject as? Int {
+                    item.state = v == config.liftLines ? .on : .off
+                }
+            }
+        }
+        Config.log("liftLines -> \(config.liftLines)")
     }
 
     @objc private func toggleTheme() {
@@ -560,6 +583,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.fontSize = config.fontSize
         panel.showOriginal = config.showOriginal
         panel.cardAnchor = config.cardAnchor
+        panel.liftLines = config.liftLines
         panel.appliesTheme()
         panel.showLoading(source: text, pair: targetLabel(), quartzX: p.x, quartzY: p.y)
 
@@ -644,6 +668,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.fontSize = config.fontSize
         panel.showOriginal = config.showOriginal
         panel.cardAnchor = config.cardAnchor
+        panel.liftLines = config.liftLines
         panel.appliesTheme()
         panel.showLoading(source: text, pair: targetLabel(), quartzX: p.x, quartzY: p.y)
 

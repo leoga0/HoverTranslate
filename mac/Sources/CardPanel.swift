@@ -29,6 +29,8 @@ final class CardPanel: NSPanel {
 
     var darkTheme = true
     var cardAnchor = 0
+    /// 卡片放在光标上方时额外上移的行数（0 = 紧贴光标上方）
+    var liftLines = 1
     var fontSize: CGFloat = 14
     var showOriginal = false
 
@@ -409,7 +411,8 @@ final class CardPanel: NSPanel {
         } else {
             let leftX = anchorQuartz.x - size.width - gap
             let rightX = anchorQuartz.x + gap
-            let upY = cocoaY + gap
+            let lift = CGFloat(min(4, max(0, liftLines))) * 22
+            let upY = cocoaY + gap + lift
             let downY = cocoaY - size.height - gap
 
             x = leftX

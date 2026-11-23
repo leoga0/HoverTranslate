@@ -72,6 +72,14 @@ final class Config {
         set { defaults.set(newValue, forKey: prefix + "industry") }
     }
 
+    var liftLines: Int {
+        get {
+            let v = defaults.integer(forKey: prefix + "liftLines")
+            return min(4, max(0, v))
+        }
+        set { defaults.set(newValue, forKey: prefix + "liftLines") }
+    }
+
     var cardAnchor: Int {
         get { return defaults.integer(forKey: prefix + "cardAnchor") }
         set { defaults.set(newValue, forKey: prefix + "cardAnchor") }
