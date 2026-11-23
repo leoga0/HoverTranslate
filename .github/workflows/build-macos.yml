@@ -4,9 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: '要挂到哪个 Release（如 v1.7.2，留空则只出 artifact）'
+        description: '要挂到哪个 Release（如 v1.7.6，留空则只出 artifact）'
         required: false
         default: ''
+  release:
+    types: [published]
   push:
     branches: [ main ]
     paths:
@@ -51,10 +53,14 @@ jobs:
           path: mac/HoverTranslate-macos.zip
           retention-days: 30
 
+      # 三条触发路径统一：手动 dispatch 用输入，Release 发布用事件里的 tag。
+      # 发布 Release 就自动补上 mac 包，不依赖谁记得手动跑一次。
       - name: Attach to release
-        if: ${{ inputs.release_tag != '' }}
+        if: ${{ inputs.release_tag != '' || github.event.release.tag_name != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag != '' && inputs.release_tag || github.event.release.tag_name }}
         run: |
-          gh release upload "${{ inputs.release_tag }}" mac/HoverTranslate-macos.zip \
+          echo "上传到 Release: $TAG"
+          gh release upload "$TAG" mac/HoverTranslate-macos.zip \
             --clobber --repo "${{ github.repository }}"
