@@ -180,7 +180,17 @@ namespace HoverTranslate
                 }
             }
 
-            // 2. 文本模式（Word / WPS / 浏览器文档 / 记事本）
+            // 2. 先按光标位置取「那一行」：长文本（聊天记录、思考块、文章）整段抓会一次性翻几百字，
+            //    而且卡片会盖住整片内容；RangeFromPoint + ExpandToEnclosingUnit(Line) 才拿到光标所在行
+            string line = TryTextLineAtPoint(el, x, y);
+            if (!string.IsNullOrEmpty(line) && TextShape.Worth(line))
+            {
+                text = line;
+                route = "textpattern-line:" + type;
+                return true;
+            }
+
+            // 2b. 文本模式（Word / WPS / 浏览器文档 / 记事本）
             string txt = TryTextPattern(el, x, y);
             if (!string.IsNullOrEmpty(txt))
             {
@@ -240,6 +250,42 @@ namespace HoverTranslate
             catch { }
 
             return false;
+        }
+
+        /// <summary>取光标所在的那一行文本；拿不到返回 null，调用方退回整段。</summary>
+        private static string TryTextLineAtPoint(AutomationElement el, int x, int y)
+        {
+            try
+            {
+                object pat = el.GetCurrentPattern(TextPattern.Pattern);
+                if (pat == null) return null;
+
+                System.Reflection.MethodInfo fromPoint = pat.GetType().GetMethod(
+                    "RangeFromPoint", new Type[] { typeof(System.Windows.Point) });
+                if (fromPoint == null) return null;
+
+                object range = fromPoint.Invoke(pat, new object[] { new System.Windows.Point(x, y) });
+                if (range == null) return null;
+
+                System.Reflection.MethodInfo expand = range.GetType().GetMethod(
+                    "ExpandToEnclosingUnit", new Type[] { typeof(System.Windows.Automation.Text.TextUnit) });
+                if (expand != null)
+                {
+                    try { expand.Invoke(range, new object[] { System.Windows.Automation.Text.TextUnit.Line }); } catch { }
+                }
+
+                System.Reflection.MethodInfo getText = range.GetType().GetMethod(
+                    "GetText", new Type[] { typeof(int) });
+                if (getText == null) return null;
+
+                object txt = getText.Invoke(range, new object[] { -1 });
+                string s = txt == null ? null : txt.ToString();
+                if (string.IsNullOrEmpty(s)) return null;
+
+                s = s.Trim();
+                return s.Length > 0 ? s : null;
+            }
+            catch { return null; }
         }
 
         private static AutomationElement FindTextChildAt(AutomationElement el, int x, int y)

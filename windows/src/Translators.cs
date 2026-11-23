@@ -611,7 +611,8 @@ namespace HoverTranslate
             outcome.TranslatedParts = translated;
             outcome.Success = translated > 0;
             outcome.ShouldShow = translated > 0 || outcome.Terms.Count > 0 || explainMode;
-            if (explainMode && translated == 0) outcome.ExplainOnly = true;
+            // 整段已是目标语言、但命中了术语：不算翻译失败，按「只讲术语」展示
+            if (translated == 0 && (explainMode || outcome.Terms.Count > 0)) outcome.ExplainOnly = true;
             outcome.Target = string.Concat(pieces).Trim();
 
             // 译文和原文一样（比如 "API" 翻回 "API"）就别弹卡片；但命中了术语要留下，解释本身有价值
@@ -624,7 +625,7 @@ namespace HoverTranslate
             outcome.From = usedFrom;
             outcome.To = usedTo;
             outcome.Engine = engine;
-            if (translated == 0 && !explainMode)
+            if (translated == 0 && !outcome.ExplainOnly)
                 outcome.Error = string.IsNullOrEmpty(lastError) ? "没有需要翻译的内容" : lastError;
 
             // 整段已是目标语言：不留译文，卡片只显示原文和术语

@@ -766,6 +766,9 @@ namespace HoverTranslate
 
             if (_card.IsVisible && _card.Tag as string == text) return;
             _card.Tag = text;
+            // 记下取词所在的文本块，卡片摆位时避开
+            if (g != null && g.Found) _card.SetAvoidRect(g.Rect);
+            else _card.SetAvoidRect(new RECT());
 
             // 目标语言过滤：整段已经是目标语言时不打扰，直接不弹，顺手把旧卡片收掉
             if (!ShouldTranslateText(text, manual))
@@ -883,6 +886,8 @@ namespace HoverTranslate
             _suppressHoverUntil = DateTime.UtcNow.AddSeconds(2.5);
 
             POINT p = Native.CursorPos();
+            // 选区解释没有单行矩形，卡片按鼠标位置摆就行
+            _card.SetAvoidRect(new RECT());
             // 锚点跟着本次选区走，否则鼠标一移就被当成「离开取词点」收卡
             _lastTrigger = p;
             _cardShownAt = DateTime.UtcNow;

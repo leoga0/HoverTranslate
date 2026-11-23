@@ -15,9 +15,39 @@ namespace HoverTranslate
         private StringBuilder _testLog;
         private int _testFail;
 
+        private static string _reportDir;
+
+        /// <summary>
+        /// 报告目录：优先 %TEMP%\ht-selftest，临时目录不可写（低完整性进程）时退回 exe 同目录。
+        /// </summary>
         public static string ReportDir
         {
-            get { return Path.Combine(Path.GetTempPath(), "ht-selftest"); }
+            get
+            {
+                if (_reportDir != null) return _reportDir;
+
+                string candidate = Path.Combine(Path.GetTempPath(), "ht-selftest");
+                if (TryPrepare(candidate)) { _reportDir = candidate; return _reportDir; }
+
+                string fallback = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selftest-out");
+                if (TryPrepare(fallback)) { _reportDir = fallback; return _reportDir; }
+
+                _reportDir = candidate;
+                return _reportDir;
+            }
+        }
+
+        private static bool TryPrepare(string dir)
+        {
+            try
+            {
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                string probe = Path.Combine(dir, ".w");
+                File.WriteAllText(probe, "1");
+                File.Delete(probe);
+                return true;
+            }
+            catch { return false; }
         }
 
         public static string ReportPath
@@ -39,10 +69,10 @@ namespace HoverTranslate
                 string old = Path.Combine(cfgDir, "config.json");
                 if (File.Exists(old)) File.Delete(old);
 
-                app.PrepareSelfTest();
-                app.RunMenuChecks();
-                app.RenderSampleCards();
-                if (app._testLog != null) sb = app._testLog;
+                    app.PrepareSelfTest();
+                    app.RunMenuChecks();
+                    app.RenderSampleCards();
+                    if (app._testLog != null) sb = app._testLog;
                 fail = app._testFail;
             }
             catch (Exception ex)
@@ -259,8 +289,11 @@ namespace HoverTranslate
                   "ExplainOnly=" + sel.ExplainOnly + " Target='" + sel.Target + "'");
             Check("解释模式带出术语", sel.Terms.Count > 0, "terms=" + sel.Terms.Count);
 
+            // 悬停中文时命中术语：不弹红色失败卡，改为「只讲术语」
             MixedOutcome hoverZh = svc.TranslateForTarget("这家医院的起付线是多少", "zh", false);
-            Check("悬停路径不被解释模式污染", !hoverZh.ExplainOnly, "ExplainOnly=" + hoverZh.ExplainOnly);
+            Check("悬停中文命中术语时按解释展示", hoverZh.ExplainOnly && hoverZh.ShouldShow,
+                  "ExplainOnly=" + hoverZh.ExplainOnly + " ShouldShow=" + hoverZh.ShouldShow);
+            Check("这种情况不再报翻译失败", string.IsNullOrEmpty(hoverZh.Error), "Error='" + hoverZh.Error + "'");
 
             Terminology.Domain = _cfg.Industry;
         }

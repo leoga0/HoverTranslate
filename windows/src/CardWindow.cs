@@ -39,6 +39,7 @@ namespace HoverTranslate
         private string _translated = "";
         private string _original = "";
         private bool _dimmed;
+        private RECT _avoid;
         private int _wantW = 360;
         private int _wantH = 60;
 
@@ -514,6 +515,20 @@ namespace HoverTranslate
                 if (y < scr.Top + margin) y = scr.Top + margin;
             }
 
+            // 和取词文本块重叠时，挪到它上方或下方，避免盖住正在读的内容
+            if (CardAnchor != 2 && _avoid.Right > _avoid.Left && _avoid.Bottom > _avoid.Top)
+            {
+                bool overlapX = x < _avoid.Right && x + w > _avoid.Left;
+                bool overlapY = y < _avoid.Bottom && y + h > _avoid.Top;
+                if (overlapX && overlapY)
+                {
+                    int up = _avoid.Top - h - gap;
+                    int down = _avoid.Bottom + gap;
+                    if (up >= scr.Top + margin) y = up;
+                    else if (down + h <= scr.Bottom - margin) y = down;
+                }
+            }
+
             if (y + h > scr.Bottom - margin) y = scr.Bottom - h - margin;
             if (y < scr.Top + margin) y = scr.Top + margin;
             if (x < scr.Left + margin) x = scr.Left + margin;
@@ -523,6 +538,12 @@ namespace HoverTranslate
         }
 
         // MARK: - 显隐与透明度
+
+        /// <summary>取词所在的文本块，卡片摆位时避开它，别压住正在读的那几行。</summary>
+        public void SetAvoidRect(RECT r)
+        {
+            _avoid = r;
+        }
 
         /// <summary>闲置时把卡片压到接近背景，需要时鼠标移上去恢复。开关关掉时任何路径都不许压暗。</summary>
         public void SetDim(bool on)
