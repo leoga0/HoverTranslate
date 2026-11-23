@@ -13,6 +13,9 @@ on:
       - 'mac/**'
       - '.github/workflows/build-macos.yml'
 
+permissions:
+  contents: write   # 往 Release 挂 mac 包需要写权限
+
 jobs:
   build-macos:
     runs-on: macos-latest
