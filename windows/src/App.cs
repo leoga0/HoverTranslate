@@ -778,7 +778,7 @@ namespace HoverTranslate
         }
 
         /// <summary>统一的取词/选区展示流程：先占位，再翻译，最后补术语。</summary>
-        private void RunTranslate(string text, POINT p, bool useAi)
+        private void RunTranslate(string text, POINT p, bool useAi, bool explain = false)
         {
             _card.CardAnchor = _cfg.CardAnchor;
             _cardShownAt = DateTime.UtcNow;
@@ -790,7 +790,7 @@ namespace HoverTranslate
             ThreadPool.QueueUserWorkItem(delegate
             {
                 MixedOutcome m = null;
-                try { m = _service.TranslateForTarget(text, target); }
+                try { m = _service.TranslateForTarget(text, target, explain); }
                 catch (Exception ex) { m = new MixedOutcome { Error = ex.Message }; }
 
                 Dispatcher.BeginInvoke(new Action(delegate
@@ -803,18 +803,26 @@ namespace HoverTranslate
                         return;
                     }
 
+                    bool explainOnly = m.ExplainOnly;
                     var r = new TranslationResult
                     {
-                        Success = m.Success,
+                        Success = explainOnly || m.Success,
                         Source = m.Source,
-                        Target = m.Target,
+                        Target = explainOnly ? "" : m.Target,
                         From = m.From,
                         To = m.To,
-                        Engine = m.Engine,
+                        Engine = explainOnly ? "解释" : m.Engine,
                         Error = m.Error
                     };
-                    _card.ShowResult(r, _cfg.ShowOriginal);
+                    // 解释模式下原文就是主角，不用等「显示原文」开关
+                    _card.ShowResult(r, _cfg.ShowOriginal || explain);
                     _card.ShowTerms(m.Terms);
+                    if (explainOnly && m.Terms.Count == 0)
+                    {
+                        _card.ShowFooterNote(AiExplainer.Available
+                            ? "本地词库没命中这些词，正在问模型…"
+                            : "本地词库没命中，选中 2~80 个字符更容易解释");
+                    }
                     ScheduleAutoDim();
                     if (!_cfg.HoverEnabled) AutoHide(2200);
 
@@ -880,7 +888,7 @@ namespace HoverTranslate
             _cardShownAt = DateTime.UtcNow;
             _card.Tag = text;
             _requestId++;
-            RunTranslate(text, p, true);
+            RunTranslate(text, p, true, true);
 
             var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(260) };
             t.Tick += delegate

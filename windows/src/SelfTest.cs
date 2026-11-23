@@ -251,6 +251,17 @@ namespace HoverTranslate
             Check("自定义别名可命中", aliasHits.Count > 0 && aliasHits[0].n == "出粉率",
                   aliasHits.Count == 0 ? "未命中" : aliasHits[0].n);
 
+            // 15. 选中解释：目标语言是中文时，中文选区也必须弹卡片（曾因 ShouldShow=false 一闪就没）
+            var svc = new TranslationService();
+            MixedOutcome sel = svc.TranslateForTarget("这家医院的起付线是多少", "zh", true);
+            Check("选中中文时解释卡片仍会显示", sel.ShouldShow, "ShouldShow=" + sel.ShouldShow);
+            Check("整段中文只讲术语、不留译文", sel.ExplainOnly && string.IsNullOrEmpty(sel.Target),
+                  "ExplainOnly=" + sel.ExplainOnly + " Target='" + sel.Target + "'");
+            Check("解释模式带出术语", sel.Terms.Count > 0, "terms=" + sel.Terms.Count);
+
+            MixedOutcome hoverZh = svc.TranslateForTarget("这家医院的起付线是多少", "zh", false);
+            Check("悬停路径不被解释模式污染", !hoverZh.ExplainOnly, "ExplainOnly=" + hoverZh.ExplainOnly);
+
             Terminology.Domain = _cfg.Industry;
         }
 

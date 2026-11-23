@@ -153,6 +153,7 @@ final class CardPanel: NSPanel {
         headerLabel.stringValue = pair
         sourceField.stringValue = TextShape.clean(source, maxLen: 400)
         sourceField.isHidden = !showOriginal || sourceField.stringValue.isEmpty
+        targetField.isHidden = false
         targetField.stringValue = "翻译中…"
         targetField.textColor = darkTheme
             ? NSColor(calibratedWhite: 0.82, alpha: 0.6)
@@ -168,10 +169,13 @@ final class CardPanel: NSPanel {
 
         if r.success {
             translated = r.target
-            headerLabel.stringValue = compactPair(r)
+            let hasTarget = !r.target.isEmpty
+            // 解释模式下没有译文：标题写「解释」，只留原文和下面的术语
+            headerLabel.stringValue = hasTarget ? compactPair(r) : "解释"
             sourceField.stringValue = TextShape.clean(r.source, maxLen: 400)
-            sourceField.isHidden = !showOriginal || sourceField.stringValue.isEmpty
+            sourceField.isHidden = (!showOriginal && hasTarget) || sourceField.stringValue.isEmpty
             targetField.stringValue = r.target
+            targetField.isHidden = !hasTarget
             targetField.textColor = darkTheme
                 ? NSColor(calibratedWhite: 1.0, alpha: 0.94)
                 : NSColor(calibratedWhite: 0.13, alpha: 1)
@@ -180,12 +184,20 @@ final class CardPanel: NSPanel {
         } else {
             translated = ""
             sourceField.isHidden = true
+            targetField.isHidden = false
             targetField.stringValue = "翻译失败"
             targetField.textColor = NSColor(calibratedRed: 1, green: 0.52, blue: 0.48, alpha: 1)
             footerField.stringValue = r.error
             footerField.isHidden = r.error.isEmpty
         }
         present()
+    }
+
+    /// 卡片底部补一行说明，不算报错，显示为常规弱化色。
+    func showFooterNote(_ text: String) {
+        footerField.stringValue = text
+        footerField.isHidden = text.isEmpty
+        relayout()
     }
 
     func showMessage(_ message: String, detail: String) {

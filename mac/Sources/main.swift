@@ -567,7 +567,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let target = config.targetLang
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let m = self.translator.translateForTarget(text, targetLang: target)
+            let m = self.translator.translateForTarget(text, targetLang: target, explainMode: true)
             DispatchQueue.main.async {
                 self.explainingSelection = false
                 if req != self.requestId { return }
@@ -576,15 +576,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 var r = TranslationResult()
-                r.success = m.success
+                r.success = m.success || m.explainOnly
                 r.source = m.source
-                r.target = m.target
+                r.target = m.explainOnly ? "" : m.target
                 r.from = m.from
                 r.to = m.to
-                r.engine = m.engine
+                r.engine = m.explainOnly ? "解释" : m.engine
                 r.error = m.error
                 self.panel.showResult(r)
                 self.panel.showTerms(m.terms)
+                if m.explainOnly && m.terms.isEmpty {
+                    self.panel.showFooterNote(AiExplainer.shared.available
+                        ? "本地词库没命中这些词，正在问模型…"
+                        : "本地词库没命中，选中 2~80 个字符更容易解释")
+                }
                 self.scheduleDim()
 
                 // 本地术语库覆盖不到的，联网让模型用大白话讲一遍

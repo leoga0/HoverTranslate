@@ -243,6 +243,12 @@ final class Translator {
 
     /// 只翻非目标语言的部分，目标语言原样保留。整句已是目标语言时 shouldShow=false。
     func translateForTarget(_ text: String, targetLang: String) -> MixedOutcome {
+        return translateForTarget(text, targetLang: targetLang, explainMode: false)
+    }
+
+    /// explainMode=true 是「选中即解释」用的：不看目标语言门槛，只要有东西可讲就弹卡片；
+    /// 整段已经是目标语言时把译文留空，卡片只显示原文加术语。
+    func translateForTarget(_ text: String, targetLang: String, explainMode: Bool) -> MixedOutcome {
         var outcome = MixedOutcome()
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         outcome.source = trimmed
@@ -256,7 +262,7 @@ final class Translator {
 
         if targetLang == "both" {
             let r = translate(trimmed, dir: .auto)
-            outcome.shouldShow = r.success || !outcome.terms.isEmpty
+            outcome.shouldShow = r.success || !outcome.terms.isEmpty || explainMode
             outcome.success = r.success
             outcome.target = r.target
             outcome.from = r.from
@@ -304,12 +310,13 @@ final class Translator {
 
         outcome.translatedParts = translated
         outcome.success = translated > 0
-        outcome.shouldShow = translated > 0
+        outcome.shouldShow = translated > 0 || !outcome.terms.isEmpty || explainMode
+        if explainMode && translated == 0 { outcome.explainOnly = true }
         outcome.target = pieces.joined().trimmingCharacters(in: .whitespacesAndNewlines)
         outcome.from = usedFrom
         outcome.to = usedTo
         outcome.engine = engine
-        if translated == 0 {
+        if translated == 0 && !explainMode {
             outcome.error = lastError.isEmpty ? "没有需要翻译的内容" : lastError
         }
 
@@ -317,8 +324,10 @@ final class Translator {
         if outcome.shouldShow {
             let a = squash(outcome.target)
             let b = squash(trimmed)
-            if a == b && outcome.terms.isEmpty { outcome.shouldShow = false }
+            if a == b && outcome.terms.isEmpty && !explainMode { outcome.shouldShow = false }
         }
+        // 整段已是目标语言：不留译文，卡片只显示原文和术语
+        if outcome.explainOnly { outcome.target = "" }
         return outcome
     }
 
@@ -387,6 +396,8 @@ struct LangSegment {
 
 struct MixedOutcome {
     var shouldShow = false
+    /// 解释模式且整段已是目标语言：没有译文，卡片只讲术语。
+    var explainOnly = false
     var success = false
     var source = ""
     var target = ""

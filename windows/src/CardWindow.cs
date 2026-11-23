@@ -271,6 +271,7 @@ namespace HoverTranslate
             _source.Text = TextShape.Clean(source, 400);
             _sourceBox.Visibility = showSource && _source.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             _target.Text = "翻译中…";
+            _target.Visibility = Visibility.Visible;
             _target.Foreground = _dark
                 ? new SolidColorBrush(Color.FromArgb(140, 200, 210, 230))
                 : new SolidColorBrush(Color.FromRgb(130, 136, 148));
@@ -289,10 +290,14 @@ namespace HoverTranslate
 
             if (r != null && r.Success)
             {
-                _pair.Text = CompactPair(r);
+                // 解释模式下没有译文：标题写「解释」，只留原文和下面的术语
+                bool hasTarget = !string.IsNullOrEmpty(r.Target);
+                _pair.Text = hasTarget ? CompactPair(r) : "解释";
                 _source.Text = TextShape.Clean(r.Source, 400);
-                _sourceBox.Visibility = showSource && _source.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-                _target.Text = r.Target;
+                _sourceBox.Visibility = ((showSource || !hasTarget) && _source.Text.Length > 0)
+                    ? Visibility.Visible : Visibility.Collapsed;
+                _target.Text = r.Target ?? "";
+                _target.Visibility = hasTarget ? Visibility.Visible : Visibility.Collapsed;
                 _target.Foreground = _dark
                     ? new SolidColorBrush(Color.FromArgb(238, 255, 255, 255))
                     : new SolidColorBrush(Color.FromRgb(32, 34, 40));
@@ -333,6 +338,14 @@ namespace HoverTranslate
             _footer.Text = detail ?? "";
             _footer.Visibility = string.IsNullOrEmpty(_footer.Text) ? Visibility.Collapsed : Visibility.Visible;
             Present();
+        }
+
+        /// <summary>卡片底部补一行说明，不算报错，显示为常规弱化色。</summary>
+        public void ShowFooterNote(string text)
+        {
+            _footer.Text = text ?? "";
+            _footer.Visibility = string.IsNullOrEmpty(_footer.Text) ? Visibility.Collapsed : Visibility.Visible;
+            Relayout();
         }
 
         /// <summary>在译文下方补一段术语解释：先用一句话讲清楚，再打个比方。</summary>

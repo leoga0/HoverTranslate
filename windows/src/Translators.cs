@@ -461,6 +461,8 @@ namespace HoverTranslate
     public class MixedOutcome
     {
         public bool ShouldShow;
+        /// <summary>解释模式且整段已经是目标语言：没有译文，卡片只讲术语。</summary>
+        public bool ExplainOnly;
         public bool Success;
         public string Source = "";
         public string Target = "";
@@ -535,6 +537,15 @@ namespace HoverTranslate
         /// </summary>
         public MixedOutcome TranslateForTarget(string text, string targetLang)
         {
+            return TranslateForTarget(text, targetLang, false);
+        }
+
+        /// <summary>
+        /// explainMode=true 是「选中即解释」用的：不看目标语言门槛，只要有东西可讲就弹卡片；
+        /// 整段已经是目标语言时把译文留空，卡片只显示原文加术语解释。
+        /// </summary>
+        public MixedOutcome TranslateForTarget(string text, string targetLang, bool explainMode)
+        {
             var outcome = new MixedOutcome();
             text = (text ?? "").Trim();
             outcome.Source = text;
@@ -546,7 +557,7 @@ namespace HoverTranslate
             if (targetLang == "both")
             {
                 TranslationResult r = Translate(text, Direction.Auto);
-                outcome.ShouldShow = r.Success || outcome.Terms.Count > 0;
+                outcome.ShouldShow = r.Success || outcome.Terms.Count > 0 || explainMode;
                 outcome.Success = r.Success;
                 outcome.Target = r.Target;
                 outcome.From = r.From;
@@ -599,7 +610,8 @@ namespace HoverTranslate
 
             outcome.TranslatedParts = translated;
             outcome.Success = translated > 0;
-            outcome.ShouldShow = translated > 0;
+            outcome.ShouldShow = translated > 0 || outcome.Terms.Count > 0 || explainMode;
+            if (explainMode && translated == 0) outcome.ExplainOnly = true;
             outcome.Target = string.Concat(pieces).Trim();
 
             // 译文和原文一样（比如 "API" 翻回 "API"）就别弹卡片；但命中了术语要留下，解释本身有价值
@@ -607,13 +619,16 @@ namespace HoverTranslate
             {
                 string a = Squash(outcome.Target);
                 string b = Squash(text);
-                if (a == b && outcome.Terms.Count == 0) outcome.ShouldShow = false;
+                if (a == b && outcome.Terms.Count == 0 && !explainMode) outcome.ShouldShow = false;
             }
             outcome.From = usedFrom;
             outcome.To = usedTo;
             outcome.Engine = engine;
-            if (translated == 0)
+            if (translated == 0 && !explainMode)
                 outcome.Error = string.IsNullOrEmpty(lastError) ? "没有需要翻译的内容" : lastError;
+
+            // 整段已是目标语言：不留译文，卡片只显示原文和术语
+            if (outcome.ExplainOnly) outcome.Target = "";
             return outcome;
         }
 
