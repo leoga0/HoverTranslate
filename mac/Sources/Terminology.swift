@@ -9,27 +9,41 @@ enum Terminology {
         var a: String   // 别名，| 分隔
         var d: String   // 一句话定义
         var x: String   // 生活化类比
-        var c: String   // 领域
+        var c: String   // 领域（显示用）
+        var i: String = ""   // 行业代码，技术词库为空；用于按行业提权
 
         var aliases: [String] {
             a.isEmpty ? [] : a.components(separatedBy: "|")
         }
     }
 
-    private static let all: [Term] = load()
+    /// 当前选中的行业代码，由菜单写入；auto 表示不偏向任何行业。
+    static var domain: String = "auto"
+
+    private static var all: [Term] = load()
+
+    /// 自定义词库变动后调用，下次匹配重新合并。
+    static func invalidate() {
+        all = load()
+    }
 
     private static func load() -> [Term] {
         guard let data = rawJSON.data(using: .utf8),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return []
+            return IndustryTerms.all() + UserDict.shared.toTerms()
         }
-        return arr.map { item in
+        var list = arr.map { item in
             Term(n: item["n"] as? String ?? "",
                  a: item["a"] as? String ?? "",
                  d: item["d"] as? String ?? "",
                  x: item["x"] as? String ?? "",
-                 c: item["c"] as? String ?? "")
+                 c: item["c"] as? String ?? "",
+                 i: item["i"] as? String ?? "")
         }
+        // 行业词库与用户自建词条并进同一张表，匹配只走一条路
+        list.append(contentsOf: IndustryTerms.all())
+        list.append(contentsOf: UserDict.shared.toTerms())
+        return list
     }
 
     /// 从一段文字里找出命中的术语，最多 max 条。
@@ -63,8 +77,10 @@ enum Terminology {
             lengths[term.n] = len
         }
 
-        // 专有名词优先，其次较长的术语，最后才按出现位置
+        // 选中行业时该行业术语先讲；其次专有名词，最后按出现位置
         scored.sort { lhs, rhs in
+            let ld = domainPreferred(lhs.1), rd = domainPreferred(rhs.1)
+            if ld != rd { return ld }
             let lw = weight(lhs.1), rw = weight(rhs.1)
             if lw != rw { return lw > rw }
             return lhs.0 < rhs.0
@@ -101,6 +117,13 @@ enum Terminology {
             }
         }
         return nil
+    }
+
+    /// 是否属于当前选中的行业：选了具体行业时，该行业术语优先。
+    private static func domainPreferred(_ t: Term) -> Bool {
+        if t.i.isEmpty { return false }
+        if domain.isEmpty || domain == "auto" { return false }
+        return t.i == domain
     }
 
     private static func weight(_ t: Term) -> Int {

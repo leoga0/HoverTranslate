@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dirItems: [NSMenuItem] = []
     private var sourceItem: NSMenuItem!
     private var darkItem: NSMenuItem!
+    private var industryMenu: NSMenuItem!
+    private var industryItems: [NSMenuItem] = []
 
     // MARK: - 生命周期
 
@@ -39,6 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.fontSize = config.fontSize
         panel.showOriginal = config.showOriginal
         panel.appliesTheme()
+
+        Terminology.domain = config.industry
 
         setupStatusItem()
         setupHotkeys()
@@ -96,6 +100,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         targetMenu.submenu = targetSub
         menu.addItem(targetMenu)
+
+        industryMenu = NSMenuItem(title: "行业词库", action: nil, keyEquivalent: "")
+        industryMenu.submenu = NSMenu()
+        menu.addItem(industryMenu)
+        buildIndustryMenu()
 
         let selItem = NSMenuItem(title: "选中即解释", action: #selector(toggleSelectionExplain), keyEquivalent: "")
         selItem.target = self
@@ -190,6 +199,147 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         config.showOriginal = !config.showOriginal
         sourceItem.state = config.showOriginal ? .on : .off
         panel.showOriginal = config.showOriginal
+    }
+
+
+    // MARK: - 行业词库
+
+    private func buildIndustryMenu() {
+        guard let sub = industryMenu?.submenu else { return }
+        sub.removeAllItems()
+        industryItems.removeAll()
+
+        for (key, title) in IndustryTerms.domains() {
+            let item = NSMenuItem(title: title, action: #selector(setIndustry(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = key
+            item.state = config.industry == key ? .on : .off
+            sub.addItem(item)
+            industryItems.append(item)
+            if key == "auto" { sub.addItem(NSMenuItem.separator()) }
+        }
+
+        sub.addItem(NSMenuItem.separator())
+
+        let addInd = NSMenuItem(title: "新增行业 / 岗位…", action: #selector(addIndustry), keyEquivalent: "")
+        addInd.target = self
+        sub.addItem(addInd)
+
+        let addTermItem = NSMenuItem(title: "给当前行业加词条…", action: #selector(addTerm), keyEquivalent: "")
+        addTermItem.target = self
+        sub.addItem(addTermItem)
+
+        let openDict = NSMenuItem(title: "打开自定义词库文件", action: #selector(openUserDict), keyEquivalent: "")
+        openDict.target = self
+        sub.addItem(openDict)
+    }
+
+    private func syncIndustryChecks() {
+        for item in industryItems {
+            item.state = (item.representedObject as? String) == config.industry ? .on : .off
+        }
+    }
+
+    @objc private func setIndustry(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        config.industry = IndustryTerms.isKnown(key) ? key : "auto"
+        Terminology.domain = config.industry
+        syncIndustryChecks()
+        Config.log("industry -> \(config.industry)")
+        toast("行业词库：\(IndustryTerms.label(for: config.industry))")
+    }
+
+    @objc private func addIndustry() {
+        guard let values = prompt(title: "新增行业 / 岗位",
+                                  hint: "加完之后它会出现在「行业词库」里，选中它就能继续给它加词条。",
+                                  fields: [("名称（行业或岗位，如：粮食加工、护士、育儿嫂）", "")]) else { return }
+
+        let label = values[0].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let key = UserDict.shared.addIndustry(label) else {
+            toast("名称没填，未添加")
+            return
+        }
+
+        Terminology.invalidate()
+        buildIndustryMenu()
+        config.industry = key
+        Terminology.domain = key
+        syncIndustryChecks()
+        Config.log("industry add -> \(key) \(label)")
+        toast("已新增：\(label)")
+    }
+
+    @objc private func addTerm() {
+        let current = config.industry
+        if current.isEmpty || current == "auto" {
+            toast("先在「行业词库」里选一个行业，再加词条")
+            return
+        }
+
+        let label = IndustryTerms.label(for: current)
+        guard let values = prompt(title: "添加词条 · \(label)",
+                                  hint: "解释按「一句话说清是什么 + 打个比方」写，不要用术语解释术语。",
+                                  fields: [("术语 / 黑话 / 专有名词", ""),
+                                           ("别名（可空，多个用 | 分隔）", ""),
+                                           ("一句话解释（写给不懂这行的人）", ""),
+                                           ("生活里的比方（可空）", "")]) else { return }
+
+        let name = values[0].trimmingCharacters(in: .whitespacesAndNewlines)
+        let def = values[2].trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.count < 2 { toast("术语名称太短，至少 2 个字"); return }
+        if def.isEmpty { toast("还没写解释，词条没有保存"); return }
+
+        UserDict.shared.addTerm(UserTerm(i: current, n: name, a: values[1], d: def, x: values[3]))
+        Terminology.invalidate()
+        Config.log("term add -> \(name) @ \(current)")
+        toast("已加入「\(label)」：\(name)")
+    }
+
+    @objc private func openUserDict() {
+        let fm = FileManager.default
+        let target = fm.fileExists(atPath: UserDict.termsURL.path) ? UserDict.termsURL : UserDict.industriesURL
+        NSWorkspace.shared.activateFileViewerSelecting([target])
+    }
+
+    private func toast(_ text: String) {
+        panel.showMessage(text, detail: "")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
+            self?.panel.hideCard()
+        }
+    }
+
+    /// 简易多字段输入框；取消返回 nil。
+    private func prompt(title: String, hint: String, fields: [(String, String)]) -> [String]? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = hint
+        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "取消")
+
+        let rowHeight: CGFloat = 52
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 384, height: rowHeight * CGFloat(fields.count)))
+        var edits: [NSTextField] = []
+
+        for (idx, field) in fields.enumerated() {
+            let top = box.frame.height - CGFloat(idx + 1) * rowHeight
+
+            let label = NSTextField(labelWithString: field.0)
+            label.frame = NSRect(x: 0, y: top + 30, width: 384, height: 16)
+            label.font = NSFont.systemFont(ofSize: 11)
+            label.textColor = NSColor.secondaryLabelColor
+            box.addSubview(label)
+
+            let edit = NSTextField(frame: NSRect(x: 0, y: top + 4, width: 384, height: 24))
+            edit.stringValue = field.1
+            box.addSubview(edit)
+            edits.append(edit)
+        }
+
+        alert.accessoryView = box
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response != .alertFirstButtonReturn { return nil }
+        return edits.map { $0.stringValue }
     }
 
     @objc private func openAccessibility() {

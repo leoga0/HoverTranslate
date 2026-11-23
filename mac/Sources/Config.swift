@@ -64,6 +64,14 @@ final class Config {
         set { defaults.set(newValue, forKey: prefix + "selectionExplain") }
     }
 
+    var industry: String {
+        get {
+            let v = defaults.string(forKey: prefix + "industry") ?? "auto"
+            return IndustryTerms.isKnown(v) ? v : "auto"
+        }
+        set { defaults.set(newValue, forKey: prefix + "industry") }
+    }
+
     var cardAnchor: Int {
         get { return defaults.integer(forKey: prefix + "cardAnchor") }
         set { defaults.set(newValue, forKey: prefix + "cardAnchor") }
