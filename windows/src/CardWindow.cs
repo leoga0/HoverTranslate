@@ -47,6 +47,15 @@ namespace HoverTranslate
         public int CardAnchor { get; set; }
         public bool HasResult { get; set; }
 
+        /// <summary>
+        /// 是否允许「闲置自动变淡」。以前这里没有开关，鼠标一离开卡片就走 _leaveTimer 直接压暗，
+        /// 菜单里关掉自动变淡也没用——判定必须由这个开关统一管。
+        /// </summary>
+        public bool AutoDimEnabled { get; set; }
+
+        /// <summary>当前是否已被压暗，自检用。</summary>
+        public bool IsDimmed { get { return _dimmed; } }
+
         public CardWindow()
         {
             WindowStyle = WindowStyle.None;
@@ -199,7 +208,7 @@ namespace HoverTranslate
             {
                 _leaveTimer.Stop();
                 if (IsMouseOver) return;
-                if (HasResult) SetDim(true);
+                if (AutoDimEnabled && HasResult) SetDim(true);
             };
 
             SourceInitialized += (s, e) => Native.ApplyOverlayStyle(this);
@@ -305,6 +314,14 @@ namespace HoverTranslate
 
         public void ShowMessage(string message, string detail)
         {
+            ShowMessageAt(message, detail, _anchorX, _anchorY);
+        }
+
+        /// <summary>在指定位置显示一条提示（开关反馈用），位置跟鼠标走。</summary>
+        public void ShowMessageAt(string message, string detail, int anchorX, int anchorY)
+        {
+            _anchorX = anchorX;
+            _anchorY = anchorY;
             HasResult = false;
             _dimmed = false;
             _pair.Text = "";
@@ -494,10 +511,11 @@ namespace HoverTranslate
 
         // MARK: - 显隐与透明度
 
-        /// <summary>闲置时把卡片压到接近背景，需要时鼠标移上去恢复。</summary>
+        /// <summary>闲置时把卡片压到接近背景，需要时鼠标移上去恢复。开关关掉时任何路径都不许压暗。</summary>
         public void SetDim(bool on)
         {
             if (!IsVisible) return;
+            if (on && !AutoDimEnabled) return;
             _dimmed = on;
             FadeTo(on ? 0.42 : 1.0, on ? 320 : 140);
         }
@@ -544,6 +562,23 @@ namespace HoverTranslate
             string text = string.IsNullOrEmpty(_translated) ? _target.Text : _translated;
             if (string.IsNullOrEmpty(text)) return;
             try { Clipboard.SetText(text); } catch { }
+        }
+
+        /// <summary>把卡片内容离屏渲染成位图，自检出图用，不依赖屏幕截图。</summary>
+        public System.Windows.Media.Imaging.BitmapSource Snapshot(int width)
+        {
+            _root.Width = width - 2;
+            _root.InvalidateMeasure();
+            _root.InvalidateArrange();
+            _root.Measure(new Size(width - 2, double.PositiveInfinity));
+            _root.Arrange(new Rect(0, 0, width - 2, _root.DesiredSize.Height));
+            _root.UpdateLayout();
+
+            int h = (int)Math.Ceiling(_root.DesiredSize.Height);
+            if (h < 20) h = 20;
+            var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(width, h, 96, 96, PixelFormats.Pbgra32);
+            bmp.Render(_root);
+            return bmp;
         }
     }
 }

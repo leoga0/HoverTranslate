@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using System.Web.Script.Serialization;
@@ -20,6 +20,7 @@ namespace HoverTranslate
         public string TargetLang { get; set; }
         public bool SelectionExplain { get; set; }
         public int CardAnchor { get; set; }
+        public string Industry { get; set; }
         public string HotkeyTranslate { get; set; }
         public string HotkeySwitch { get; set; }
         public string HotkeyToggle { get; set; }
@@ -36,6 +37,7 @@ namespace HoverTranslate
             TargetLang = "zh";
             SelectionExplain = true;
             CardAnchor = 0;
+            Industry = "auto";
             DarkTheme = true;
             FontSize = 15;
             AutoStart = false;
@@ -78,6 +80,17 @@ namespace HoverTranslate
                 return true;
             }
             catch { return false; }
+        }
+
+        /// <summary>自检用：把配置目录指到临时位置，避免污染用户真实配置。</summary>
+        public static void UseDirForTest(string dir)
+        {
+            try
+            {
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                _dir = dir;
+            }
+            catch { }
         }
 
         public static string ConfigPath { get { return Path.Combine(DirPath, "config.json"); } }
@@ -135,6 +148,7 @@ namespace HoverTranslate
             if (string.IsNullOrEmpty(TargetLang)) TargetLang = "zh";
             if (TargetLang != "zh" && TargetLang != "en" && TargetLang != "both") TargetLang = "zh";
             if (CardAnchor < 0 || CardAnchor > 2) CardAnchor = 0;
+            if (!IndustryTerms.IsKnownAny(Industry)) Industry = "auto";
         }
     }
 }

@@ -10,7 +10,7 @@ using Forms = System.Windows.Forms;
 
 namespace HoverTranslate
 {
-    public class TranslatorApp : Application
+    public partial class TranslatorApp : Application
     {
         private const int HOTKEY_TRANSLATE = 9001;
         private const int HOTKEY_SWITCH = 9002;
@@ -20,6 +20,7 @@ namespace HoverTranslate
         private TranslationService _service;
         private CardWindow _card;
         private Forms.NotifyIcon _tray;
+        private Forms.ContextMenuStrip _menu;
         private Forms.ToolStripMenuItem _miHover;
         private Forms.ToolStripMenuItem _miTargetZh;
         private Forms.ToolStripMenuItem _miTargetEn;
@@ -28,7 +29,21 @@ namespace HoverTranslate
         private Forms.ToolStripMenuItem _miAnchorRight;
         private Forms.ToolStripMenuItem _miAnchorCorner;
         private Forms.ToolStripMenuItem _miDark;
+        private Forms.ToolStripMenuItem _miShowSrc;
+        private Forms.ToolStripMenuItem _miQuiet;
+        private Forms.ToolStripMenuItem _miAutoDim;
+        private Forms.ToolStripMenuItem _miSel;
+        private Forms.ToolStripMenuItem _miFontBig;
+        private Forms.ToolStripMenuItem _miFontMid;
+        private Forms.ToolStripMenuItem _miFontSmall;
         private Forms.ToolStripMenuItem _miAutoStart;
+        private Forms.ToolStripMenuItem _indMenu;
+        private readonly System.Collections.Generic.Dictionary<string, Forms.ToolStripMenuItem> _miIndustry =
+            new System.Collections.Generic.Dictionary<string, Forms.ToolStripMenuItem>(StringComparer.Ordinal);
+
+        /// <summary>自检模式：不弹卡片、不建托盘图标，只跑开关逻辑。</summary>
+        internal bool Headless;
+
         private DispatcherTimer _timer;
         private HwndSource _hotkeyHost;
 
@@ -45,14 +60,31 @@ namespace HoverTranslate
         private DateTime _cardShownAt = DateTime.MinValue;
 
         [STAThread]
-        public static void Main()
+        public static void Main(string[] args)
         {
+            bool allowMultiple = false;
+            if (args != null)
+            {
+                foreach (string a in args)
+                {
+                    if (string.Equals(a, "--selftest", StringComparison.OrdinalIgnoreCase))
+                    {
+                        TranslatorApp.SelfTestMain();
+                        return;
+                    }
+                    if (string.Equals(a, "--allow-multiple", StringComparison.OrdinalIgnoreCase))
+                    {
+                        allowMultiple = true;
+                    }
+                }
+            }
+
             try
             {
                 bool created;
                 using (var mutex = new Mutex(true, "HoverTranslate.SingleInstance.Mutex", out created))
                 {
-                    if (!created) return;
+                    if (!created && !allowMultiple) return;
                     Native.EnablePerMonitorDpi();
                     var app = new TranslatorApp();
                     app.DispatcherUnhandledException += delegate(object s, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
@@ -79,13 +111,16 @@ namespace HoverTranslate
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             AppConfig.Log("OnStartup begin");
+            UserDict.Load();
             _cfg = AppConfig.Load();
             _cfg.Normalize();
+            Terminology.Domain = _cfg.Industry;
             _service = new TranslationService();
 
             _card = new CardWindow();
             _card.QuietMode = _cfg.QuietMode;
             _card.CardAnchor = _cfg.CardAnchor;
+            _card.AutoDimEnabled = _cfg.AutoDim;
             _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
             AppConfig.Log("card ok");
 
@@ -115,65 +150,69 @@ namespace HoverTranslate
             _tray = new Forms.NotifyIcon();
             _tray.Icon = Native.BuildTrayIcon(_cfg.DarkTheme);
             _tray.Text = "悬停翻译 · 鼠标停在文字上即出译文";
-            _tray.Visible = true;
+            _tray.Visible = !Headless;
 
-            var menu = new Forms.ContextMenuStrip();
-            menu.ShowImageMargin = false;
+            _menu = new Forms.ContextMenuStrip();
+            _menu.ShowImageMargin = false;
+            // 展开菜单前先按配置刷新勾选，并把卡片收掉：卡片是置顶窗口，
+            // 停在托盘附近时会挡住弹出菜单，点上去像是开关失灵。
+            _menu.Opening += delegate
+            {
+                try { _card.HideCard(true); } catch { }
+                SyncMenu();
+            };
 
-            _miHover = new Forms.ToolStripMenuItem("悬停翻译", null, (s, e) => ToggleHover());
-            _miHover.Checked = _cfg.HoverEnabled;
+            _miHover = new Forms.ToolStripMenuItem("悬停翻译", null, delegate { ToggleHover(); });
 
             var targetMenu = new Forms.ToolStripMenuItem("翻译目标");
-            _miTargetZh = new Forms.ToolStripMenuItem("译成中文（只在非中文上翻译）", null, (s, e) => SetTargetLang("zh"));
-            _miTargetEn = new Forms.ToolStripMenuItem("译成英文（只在中文上翻译）", null, (s, e) => SetTargetLang("en"));
-            _miTargetBoth = new Forms.ToolStripMenuItem("双向都翻", null, (s, e) => SetTargetLang("both"));
+            _miTargetZh = new Forms.ToolStripMenuItem("译成中文（只在非中文上翻译）", null, delegate { SetTargetLang("zh"); });
+            _miTargetEn = new Forms.ToolStripMenuItem("译成英文（只在中文上翻译）", null, delegate { SetTargetLang("en"); });
+            _miTargetBoth = new Forms.ToolStripMenuItem("双向都翻", null, delegate { SetTargetLang("both"); });
             targetMenu.DropDownItems.Add(_miTargetZh);
             targetMenu.DropDownItems.Add(_miTargetEn);
             targetMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
             targetMenu.DropDownItems.Add(_miTargetBoth);
 
+            var indMenu = new Forms.ToolStripMenuItem("行业词库");
+            _indMenu = indMenu;
+            BuildIndustryMenu();
+
             var posMenu = new Forms.ToolStripMenuItem("卡片位置");
-            _miAnchorMouse = new Forms.ToolStripMenuItem("鼠标左上方（不挡下文）", null, (s, e) => SetAnchor(0));
-            _miAnchorRight = new Forms.ToolStripMenuItem("鼠标右侧", null, (s, e) => SetAnchor(1));
-            _miAnchorCorner = new Forms.ToolStripMenuItem("固定右下角", null, (s, e) => SetAnchor(2));
+            _miAnchorMouse = new Forms.ToolStripMenuItem("鼠标左上方（不挡下文）", null, delegate { SetAnchor(0); });
+            _miAnchorRight = new Forms.ToolStripMenuItem("鼠标右侧", null, delegate { SetAnchor(1); });
+            _miAnchorCorner = new Forms.ToolStripMenuItem("固定右下角", null, delegate { SetAnchor(2); });
             posMenu.DropDownItems.Add(_miAnchorMouse);
             posMenu.DropDownItems.Add(_miAnchorRight);
             posMenu.DropDownItems.Add(_miAnchorCorner);
 
             var themeMenu = new Forms.ToolStripMenuItem("外观");
-            _miDark = new Forms.ToolStripMenuItem("深色卡片", null, (s, e) => ToggleTheme());
-            _miDark.Checked = _cfg.DarkTheme;
-            var miFontBig = new Forms.ToolStripMenuItem("大字号", null, (s, e) => SetFont(17));
-            var miFontMid = new Forms.ToolStripMenuItem("中字号", null, (s, e) => SetFont(15));
-            var miFontSmall = new Forms.ToolStripMenuItem("小字号", null, (s, e) => SetFont(13));
-            var miShowSrc = new Forms.ToolStripMenuItem("显示原文", null, (s, e) => ToggleSource());
-            var miQuiet = new Forms.ToolStripMenuItem("低调样式", null, (s, e) => ToggleQuiet());
-            miQuiet.Checked = _cfg.QuietMode;
-            var miAutoDim = new Forms.ToolStripMenuItem("闲置自动变淡", null, (s, e) => ToggleAutoDim());
-            miAutoDim.Checked = _cfg.AutoDim;
-            var miSel = new Forms.ToolStripMenuItem("选中即解释", null, (s, e) => ToggleSelectionExplain());
-            miSel.Checked = _cfg.SelectionExplain;
-            miShowSrc.Checked = _cfg.ShowOriginal;
+            _miDark = new Forms.ToolStripMenuItem("深色卡片", null, delegate { ToggleTheme(); });
+            _miFontBig = new Forms.ToolStripMenuItem("大字号", null, delegate { SetFont(17); });
+            _miFontMid = new Forms.ToolStripMenuItem("中字号", null, delegate { SetFont(15); });
+            _miFontSmall = new Forms.ToolStripMenuItem("小字号", null, delegate { SetFont(13); });
+            _miShowSrc = new Forms.ToolStripMenuItem("显示原文", null, delegate { ToggleSource(); });
+            _miQuiet = new Forms.ToolStripMenuItem("低调样式", null, delegate { ToggleQuiet(); });
+            _miAutoDim = new Forms.ToolStripMenuItem("闲置自动变淡", null, delegate { ToggleAutoDim(); });
+            _miSel = new Forms.ToolStripMenuItem("选中即解释", null, delegate { ToggleSelectionExplain(); });
             themeMenu.DropDownItems.Add(_miDark);
             themeMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
-            themeMenu.DropDownItems.Add(miFontBig);
-            themeMenu.DropDownItems.Add(miFontMid);
-            themeMenu.DropDownItems.Add(miFontSmall);
+            themeMenu.DropDownItems.Add(_miFontBig);
+            themeMenu.DropDownItems.Add(_miFontMid);
+            themeMenu.DropDownItems.Add(_miFontSmall);
             themeMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
-            themeMenu.DropDownItems.Add(miShowSrc);
-            themeMenu.DropDownItems.Add(miQuiet);
-            themeMenu.DropDownItems.Add(miAutoDim);
-            themeMenu.DropDownItems.Add(miSel);
+            themeMenu.DropDownItems.Add(_miShowSrc);
+            themeMenu.DropDownItems.Add(_miQuiet);
+            themeMenu.DropDownItems.Add(_miAutoDim);
+            themeMenu.DropDownItems.Add(_miSel);
 
-            _miAutoStart = new Forms.ToolStripMenuItem("开机自动启动", null, (s, e) => ToggleAutoStart());
-            _miAutoStart.Checked = IsAutoStartEnabled();
+            _miAutoStart = new Forms.ToolStripMenuItem("开机自动启动", null, delegate { ToggleAutoStart(); });
 
-            var miOpenCfg = new Forms.ToolStripMenuItem("打开配置文件", null, (s, e) =>
+            var miOpenCfg = new Forms.ToolStripMenuItem("打开配置文件", null, delegate
             {
                 try { Process.Start("explorer.exe", "/select,\"" + AppConfig.ConfigPath + "\""); } catch { }
             });
 
-            var miHelp = new Forms.ToolStripMenuItem("快捷键说明", null, (s, e) =>
+            var miHelp = new Forms.ToolStripMenuItem("快捷键说明", null, delegate
             {
                 MessageBox.Show(
                     "鼠标停在需要翻译的文字上约 " + _cfg.HoverDelayMs + " 毫秒，自动弹出译文。\n\n" +
@@ -182,69 +221,204 @@ namespace HoverTranslate
                     "Ctrl+Alt+H   暂停或恢复悬停翻译\n\n" +
                     "「翻译目标」决定什么情况才翻译：译成中文时，鼠标停在中文上不会弹卡片。\n" +
                     "一句话里中英混排时，只翻非目标语言的部分。\n\n" +
+                    "「行业词库」选中自己那一行后，该行业的行话优先解释，选中文字也能用。\n\n" +
                     "卡片：按住左键可拖动，右键复制译文，右上角 × 关闭。",
                     "悬停翻译",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
             });
 
-            var miExit = new Forms.ToolStripMenuItem("退出", null, (s, e) => ExitApp());
+            var miExit = new Forms.ToolStripMenuItem("退出", null, delegate { ExitApp(); });
 
-            menu.Items.Add(_miHover);
-            menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add(targetMenu);
-            menu.Items.Add(posMenu);
-            menu.Items.Add(themeMenu);
-            menu.Items.Add(_miAutoStart);
-            menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add(miOpenCfg);
-            menu.Items.Add(miHelp);
-            menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add(miExit);
+            _menu.Items.Add(_miHover);
+            _menu.Items.Add(new Forms.ToolStripSeparator());
+            _menu.Items.Add(targetMenu);
+            _menu.Items.Add(indMenu);
+            _menu.Items.Add(posMenu);
+            _menu.Items.Add(themeMenu);
+            _menu.Items.Add(_miAutoStart);
+            _menu.Items.Add(new Forms.ToolStripSeparator());
+            _menu.Items.Add(miOpenCfg);
+            _menu.Items.Add(miHelp);
+            _menu.Items.Add(new Forms.ToolStripSeparator());
+            _menu.Items.Add(miExit);
 
-            _tray.ContextMenuStrip = menu;
-            _tray.DoubleClick += (s, e) => ToggleHover();
-            RefreshTargetChecks();
-            RefreshAnchorChecks();
+            _tray.ContextMenuStrip = _menu;
+            _tray.DoubleClick += delegate { ToggleHover(); };
+            SyncMenu();
+        }
+
+        /// <summary>
+        /// 菜单勾选状态的唯一出口：每次改过配置都调它，菜单展开时也调一遍。
+        /// 以前有几个开关只在创建时设了一次 Checked，点完看不到状态变化，像是没生效。
+        /// </summary>
+        private void SyncMenu()
+        {
+            if (_cfg == null) return;
+
+            if (_miHover != null) _miHover.Checked = _cfg.HoverEnabled;
+            if (_miDark != null) _miDark.Checked = _cfg.DarkTheme;
+            if (_miShowSrc != null) _miShowSrc.Checked = _cfg.ShowOriginal;
+            if (_miQuiet != null) _miQuiet.Checked = _cfg.QuietMode;
+            if (_miAutoDim != null) _miAutoDim.Checked = _cfg.AutoDim;
+            if (_miSel != null) _miSel.Checked = _cfg.SelectionExplain;
+            if (_miAutoStart != null) _miAutoStart.Checked = IsAutoStartEnabled();
+
+            if (_miTargetZh != null)
+            {
+                _miTargetZh.Checked = _cfg.TargetLang == "zh";
+                _miTargetEn.Checked = _cfg.TargetLang == "en";
+                _miTargetBoth.Checked = _cfg.TargetLang == "both";
+            }
+
+            if (_miAnchorMouse != null)
+            {
+                _miAnchorMouse.Checked = _cfg.CardAnchor == 0;
+                _miAnchorRight.Checked = _cfg.CardAnchor == 1;
+                _miAnchorCorner.Checked = _cfg.CardAnchor == 2;
+            }
+
+            if (_miFontBig != null)
+            {
+                _miFontBig.Checked = Math.Abs(_cfg.FontSize - 17) < 0.5;
+                _miFontMid.Checked = Math.Abs(_cfg.FontSize - 15) < 0.5;
+                _miFontSmall.Checked = Math.Abs(_cfg.FontSize - 13) < 0.5;
+            }
+
+            foreach (var pair in _miIndustry)
+            {
+                pair.Value.Checked = pair.Key == _cfg.Industry;
+            }
         }
 
         private void SetTargetLang(string lang)
         {
             _cfg.TargetLang = lang;
             _cfg.Save();
-            RefreshTargetChecks();
+            SyncMenu();
+            AppConfig.Log("menu target -> " + lang);
             ShowToast(lang == "zh" ? "译成中文 · 中文不再触发" : (lang == "en" ? "译成英文 · 英文不再触发" : "双向都翻"));
         }
 
-        private void RefreshTargetChecks()
+        private void SetIndustry(string key)
         {
-            if (_miTargetZh == null) return;
-            _miTargetZh.Checked = _cfg.TargetLang == "zh";
-            _miTargetEn.Checked = _cfg.TargetLang == "en";
-            _miTargetBoth.Checked = _cfg.TargetLang == "both";
+            if (!IndustryTerms.IsKnownAny(key)) key = "auto";
+            _cfg.Industry = key;
+            _cfg.Save();
+            Terminology.Domain = key;
+            SyncMenu();
+            AppConfig.Log("menu industry -> " + key + " (词库共 " + Terminology.TotalCount + " 条)");
+            ShowToast("行业词库：" + IndustryTerms.LabelAny(key));
+        }
+
+        /// <summary>重建「行业词库」子菜单：内置行业 + 用户自己加的行业/岗位 + 管理入口。</summary>
+        private void BuildIndustryMenu()
+        {
+            if (_indMenu == null) return;
+
+            _indMenu.DropDownItems.Clear();
+            _miIndustry.Clear();
+
+            foreach (string[] domain in IndustryTerms.AllDomains())
+            {
+                string key = domain[0];
+                var item = new Forms.ToolStripMenuItem(domain[1], null, delegate { SetIndustry(key); });
+                _miIndustry[key] = item;
+                _indMenu.DropDownItems.Add(item);
+                if (key == "auto") _indMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
+            }
+
+            _indMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
+            _indMenu.DropDownItems.Add(new Forms.ToolStripMenuItem("新增行业 / 岗位…", null, delegate { AddIndustryInteractive(); }));
+            _indMenu.DropDownItems.Add(new Forms.ToolStripMenuItem("给当前行业加词条…", null, delegate { AddTermInteractive(); }));
+            _indMenu.DropDownItems.Add(new Forms.ToolStripMenuItem("打开自定义词库文件", null, delegate { OpenUserDict(); }));
+            SyncMenu();
+        }
+
+        private void AddIndustryInteractive()
+        {
+            string[] r = Prompt.Ask("新增行业 / 岗位",
+                new string[] { "名称（行业或岗位，如：粮食加工、护士、育儿嫂）" },
+                new string[] { "" },
+                "加完之后它会出现在「行业词库」里，选中它就能继续给它加词条。");
+            if (r == null) return;
+
+            string label = (r[0] ?? "").Trim();
+            string key = UserDict.AddIndustry(label);
+            if (string.IsNullOrEmpty(key)) { ShowToast("名称没填，未添加"); return; }
+
+            Terminology.Invalidate();
+            BuildIndustryMenu();
+            SetIndustry(key);
+            AppConfig.Log("industry add -> " + key + " label=" + label);
+        }
+
+        private void AddTermInteractive()
+        {
+            if (string.IsNullOrEmpty(_cfg.Industry) || _cfg.Industry == "auto")
+            {
+                ShowToast("先在「行业词库」里选一个行业，再加词条");
+                return;
+            }
+
+            string label = IndustryTerms.LabelAny(_cfg.Industry);
+            string[] r = Prompt.Ask("添加词条 · " + label,
+                new string[]
+                {
+                    "术语 / 黑话 / 专有名词",
+                    "别名（可空，多个用 | 分隔）",
+                    "一句话解释（写给不懂这行的人）",
+                    "生活里的比方（可空）"
+                },
+                new string[] { "", "", "", "" },
+                "解释按「一句话说清是什么 + 打个比方」写，不要用术语解释术语。");
+            if (r == null) return;
+
+            string name = (r[0] ?? "").Trim();
+            string def = (r[2] ?? "").Trim();
+            if (name.Length < 2) { ShowToast("术语名称太短，至少 2 个字"); return; }
+            if (def.Length == 0) { ShowToast("还没写解释，词条没有保存"); return; }
+
+            UserDict.AddTerm(new UserTerm
+            {
+                i = _cfg.Industry,
+                n = name,
+                a = (r[1] ?? "").Trim(),
+                d = def,
+                x = (r[3] ?? "").Trim()
+            });
+            Terminology.Invalidate();
+            AppConfig.Log("term add -> " + name + " @" + _cfg.Industry + "，词库合计 " + Terminology.TotalCount + " 条");
+            SetIndustry(_cfg.Industry);
+            ShowToast("已加入「" + label + "」：" + name);
+        }
+
+        private void OpenUserDict()
+        {
+            try
+            {
+                string path = File.Exists(UserDict.TermsPath) ? UserDict.TermsPath : AppConfig.ConfigPath;
+                Process.Start("explorer.exe", "/select,\"" + path + "\"");
+            }
+            catch { }
         }
 
         private void SetAnchor(int mode)
         {
             _cfg.CardAnchor = mode;
             _cfg.Save();
-            RefreshAnchorChecks();
+            _card.CardAnchor = mode;
+            SyncMenu();
+            AppConfig.Log("menu anchor -> " + mode);
             ShowToast(mode == 0 ? "卡片在鼠标左上方" : (mode == 1 ? "卡片在鼠标右侧" : "卡片固定在右下角"));
-        }
-
-        private void RefreshAnchorChecks()
-        {
-            if (_miAnchorMouse == null) return;
-            _miAnchorMouse.Checked = _cfg.CardAnchor == 0;
-            _miAnchorRight.Checked = _cfg.CardAnchor == 1;
-            _miAnchorCorner.Checked = _cfg.CardAnchor == 2;
         }
 
         private void ToggleHover()
         {
             _cfg.HoverEnabled = !_cfg.HoverEnabled;
             _cfg.Save();
-            _miHover.Checked = _cfg.HoverEnabled;
+            SyncMenu();
+            AppConfig.Log("menu hover -> " + _cfg.HoverEnabled);
             if (!_cfg.HoverEnabled) _card.HideCard(true);
             ShowToast(_cfg.HoverEnabled ? "悬停翻译已开启" : "悬停翻译已暂停");
         }
@@ -253,14 +427,18 @@ namespace HoverTranslate
         {
             _cfg.DarkTheme = !_cfg.DarkTheme;
             _cfg.Save();
-            _miDark.Checked = _cfg.DarkTheme;
             RefreshCardStyle();
+            SyncMenu();
+            AppConfig.Log("menu theme dark -> " + _cfg.DarkTheme);
+            ShowToast(_cfg.DarkTheme ? "深色卡片" : "浅色卡片");
         }
 
         private void ToggleSource()
         {
             _cfg.ShowOriginal = !_cfg.ShowOriginal;
             _cfg.Save();
+            SyncMenu();
+            AppConfig.Log("menu showSource -> " + _cfg.ShowOriginal);
             ShowToast(_cfg.ShowOriginal ? "卡片显示原文" : "卡片隐藏原文");
         }
 
@@ -269,13 +447,23 @@ namespace HoverTranslate
             _cfg.QuietMode = !_cfg.QuietMode;
             _cfg.Save();
             RefreshCardStyle();
-            ShowToast(_cfg.QuietMode ? "低调样式" : "标准样式");
+            SyncMenu();
+            AppConfig.Log("menu quiet -> " + _cfg.QuietMode);
+            ShowToast(_cfg.QuietMode ? "低调样式 · 更透" : "标准样式 · 更实");
         }
 
         private void ToggleSelectionExplain()
         {
             _cfg.SelectionExplain = !_cfg.SelectionExplain;
             _cfg.Save();
+            SyncMenu();
+            if (!_cfg.SelectionExplain)
+            {
+                // 关掉就把排队中的解释也取消，否则还会弹最后一次
+                _selTimer.Stop();
+                _lastSelection = null;
+            }
+            AppConfig.Log("menu selectionExplain -> " + _cfg.SelectionExplain);
             ShowToast(_cfg.SelectionExplain ? "选中文字就会解释" : "已关闭选中即解释");
         }
 
@@ -283,6 +471,18 @@ namespace HoverTranslate
         {
             _cfg.AutoDim = !_cfg.AutoDim;
             _cfg.Save();
+            _card.AutoDimEnabled = _cfg.AutoDim;
+            SyncMenu();
+            if (!_cfg.AutoDim)
+            {
+                // 关掉时把已经压暗的卡片恢复，不然看上去像没生效
+                _card.SetDim(false);
+            }
+            else
+            {
+                ScheduleAutoDim();
+            }
+            AppConfig.Log("menu autoDim -> " + _cfg.AutoDim);
             ShowToast(_cfg.AutoDim ? "闲置自动变淡" : "常亮显示");
         }
 
@@ -290,6 +490,7 @@ namespace HoverTranslate
         {
             _card.QuietMode = _cfg.QuietMode;
             _card.CardAnchor = _cfg.CardAnchor;
+            _card.AutoDimEnabled = _cfg.AutoDim;
             _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
         }
 
@@ -298,23 +499,28 @@ namespace HoverTranslate
             _cfg.FontSize = size;
             _cfg.Save();
             RefreshCardStyle();
+            SyncMenu();
+            AppConfig.Log("menu fontSize -> " + size);
+            ShowToast("字号 " + (int)size);
         }
 
+        /// <summary>开关操作的可见反馈。位置跟着当前鼠标走，不然会出现在上一次取词的地方。</summary>
         private void ShowToast(string text)
         {
+            AppConfig.Log("toast: " + text);
+            if (Headless) return;
             try
             {
                 POINT p = Native.CursorPos();
-                _card.ShowMessage(text, "Ctrl+Alt+H 暂停 · Ctrl+Alt+D 换方向");
-                _card.ShowMessage(text, "");
+                _card.ShowMessageAt(text, "", p.X, p.Y);
                 if (_card.IsVisible)
                 {
-                    var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
-                    t.Tick += (s, e) => { t.Stop(); _card.HideCard(false); };
+                    var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
+                    t.Tick += delegate { t.Stop(); _card.HideCard(false); };
                     t.Start();
                 }
             }
-            catch { }
+            catch (Exception ex) { AppConfig.Log("toast fail: " + ex.Message); }
         }
 
         // ---------------- 开机自启 ----------------

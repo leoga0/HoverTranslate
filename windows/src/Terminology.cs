@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Web.Script.Serialization;
 
@@ -16,7 +16,8 @@ namespace HoverTranslate
             public string a = "";   // 别名，用 | 分隔
             public string d = "";   // 一句话定义
             public string x = "";   // 生活化类比
-            public string c = "";   // 领域
+            public string c = "";   // 领域（显示用）
+            public string i = "";   // 行业代码，技术词库为空；用于按行业提权
 
             public string[] Aliases
             {
@@ -27,6 +28,9 @@ namespace HoverTranslate
         private static List<Term> _all;
         private static readonly object _lock = new object();
 
+        /// <summary>当前选中的行业代码（auto 表示不偏向任何行业），由托盘菜单写入。</summary>
+        public static string Domain = "auto";
+
         private static List<Term> All
         {
             get
@@ -35,16 +39,34 @@ namespace HoverTranslate
                 lock (_lock)
                 {
                     if (_all != null) return _all;
+                    var list = new List<Term>();
                     try
                     {
                         var ser = new JavaScriptSerializer { MaxJsonLength = 8 * 1024 * 1024 };
-                        _all = ser.Deserialize<List<Term>>(RawJson);
+                        List<Term> baseList = ser.Deserialize<List<Term>>(RawJson);
+                        if (baseList != null) list.AddRange(baseList);
                     }
-                    catch { _all = new List<Term>(); }
+                    catch { }
+                    // 行业词库并到同一张表里，匹配逻辑只走一条路
+                    try { list.AddRange(IndustryTerms.All); }
+                    catch { }
+                    // 用户自己加的词条排在最后，同样进入匹配
+                    try { list.AddRange(UserDict.ToTerms()); }
+                    catch { }
+                    _all = list;
                     return _all;
                 }
             }
         }
+
+        /// <summary>自定义词库变动后调用，下次匹配重新合并。</summary>
+        public static void Invalidate()
+        {
+            lock (_lock) { _all = null; }
+        }
+
+        /// <summary>词库条目总数（技术 + 行业）。</summary>
+        public static int TotalCount { get { return All.Count; } }
 
         /// <summary>从一段文字里找出命中的术语，按出现顺序返回，最多 max 条。</summary>
         public static List<Term> Match(string text, int max)
@@ -83,10 +105,14 @@ namespace HoverTranslate
                 lengths[t] = len;
             }
 
-            // 专有名词优先（Docker 比「打包」更值得讲），其次长术语，最后按出现位置；
-            // 被更长术语盖住的（如「缓存」之于「缓存击穿」）不再重复
+            // 选中行业时该行业的术语先讲；其次是专有名词（Docker 比「打包」更值得讲），
+            // 最后按出现位置。被更长术语盖住的（如「缓存」之于「缓存击穿」）不再重复
             scored.Sort(delegate(KeyValuePair<int, Term> a, KeyValuePair<int, Term> b)
             {
+                bool aDom = DomainPreferred(a.Value);
+                bool bDom = DomainPreferred(b.Value);
+                if (aDom != bDom) return aDom ? -1 : 1;
+
                 bool aProper = Weight(a.Value) == 3;
                 bool bProper = Weight(b.Value) == 3;
                 if (aProper != bProper) return aProper ? -1 : 1;
@@ -127,6 +153,14 @@ namespace HoverTranslate
                 }
             }
             return null;
+        }
+
+        /// <summary>是否属于当前选中的行业：选了具体行业时，该行业术语优先。auto 不偏向。</summary>
+        private static bool DomainPreferred(Term t)
+        {
+            if (string.IsNullOrEmpty(t.i)) return false;
+            if (string.IsNullOrEmpty(Domain) || Domain == "auto") return false;
+            return t.i == Domain;
         }
 
         /// <summary>术语的分量：英文专名/缩写 3，较长的中文术语 2，两字泛词 1。</summary>
