@@ -2,6 +2,11 @@ name: Build macOS
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: '要挂到哪个 Release（如 v1.7.2，留空则只出 artifact）'
+        required: false
+        default: ''
   push:
     branches: [ main ]
     paths:
@@ -42,3 +47,11 @@ jobs:
           name: HoverTranslate-macos
           path: mac/HoverTranslate-macos.zip
           retention-days: 30
+
+      - name: Attach to release
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ inputs.release_tag }}" mac/HoverTranslate-macos.zip \
+            --clobber --repo "${{ github.repository }}"
