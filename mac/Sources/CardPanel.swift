@@ -197,7 +197,7 @@ final class CardPanel: NSPanel {
     func showFooterNote(_ text: String) {
         footerField.stringValue = text
         footerField.isHidden = text.isEmpty
-        relayout()
+        present()
     }
 
     func showMessage(_ message: String, detail: String) {
