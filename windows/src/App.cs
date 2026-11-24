@@ -139,7 +139,7 @@ namespace HoverTranslate
             UserDict.Load();
             _cfg = AppConfig.Load();
             _cfg.Normalize();
-            Terminology.Domain = _cfg.Industry;
+            Terminology.SetDomains(SplitKeys(_cfg.Industries));
             _service = new TranslationService();
 
             // 开机自启以配置为准：配置说开着，注册项被清掉或用旧路径，这里补回来。
@@ -426,7 +426,17 @@ namespace HoverTranslate
 
             foreach (var pair in _miIndustry)
             {
-                pair.Value.Checked = pair.Key == _cfg.Industry;
+                string key = pair.Key;
+                bool on;
+                if (key == "auto")
+                {
+                    on = string.IsNullOrEmpty(_cfg.Industries);
+                }
+                else
+                {
+                    on = Array.IndexOf(SplitKeys(_cfg.Industries), key) >= 0;
+                }
+                pair.Value.Checked = on;
             }
         }
 
@@ -439,15 +449,74 @@ namespace HoverTranslate
             ShowToast(lang == "zh" ? "译成中文 · 中文不再触发" : (lang == "en" ? "译成英文 · 英文不再触发" : "双向都翻"));
         }
 
+        /// <summary>配置里的多选串拆成数组。</summary>
+        private static string[] SplitKeys(string csv)
+        {
+            if (string.IsNullOrEmpty(csv)) return new string[0];
+            return csv.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
+        /// <summary>当前选中的行业/岗位列表（可变副本）。</summary>
+        private List<string> SelectedKeys()
+        {
+            var list = new List<string>();
+            foreach (string k in SplitKeys(_cfg.Industries))
+            {
+                string key = k.Trim();
+                if (key.Length > 0 && !list.Contains(key)) list.Add(key);
+            }
+            return list;
+        }
+
+        /// <summary>把多选结果写进配置、匹配引擎和菜单，一处改三处同步。</summary>
+        private void ApplyIndustrySelection()
+        {
+            _cfg.Industries = string.Join(",", SelectedKeys().ToArray());
+            _cfg.Normalize();
+            _cfg.Save();
+            Terminology.SetDomains(SplitKeys(_cfg.Industries));
+            SyncMenu();
+            AppConfig.Log("menu industry -> [" + _cfg.Industries + "] (词库共 " + Terminology.TotalCount + " 条)");
+            ShowToast("词库：" + DescribeIndustry());
+        }
+
+        /// <summary>点一下切换这个行业/岗位选没选中，菜单不关，可以连着选几个。</summary>
+        private void ToggleIndustry(string key)
+        {
+            if (!IndustryTerms.IsKnownAny(key)) return;
+            var keys = SelectedKeys();
+            if (keys.Contains(key)) keys.Remove(key);
+            else keys.Add(key);
+            _cfg.Industries = string.Join(",", keys.ToArray());
+            ApplyIndustrySelection();
+        }
+
+        private void ClearIndustry()
+        {
+            _cfg.Industries = "";
+            ApplyIndustrySelection();
+        }
+
+        private string DescribeIndustry()
+        {
+            string[] keys = SplitKeys(_cfg.Industries);
+            if (keys.Length == 0) return "全部行业与岗位";
+            if (keys.Length == 1) return IndustryTerms.LabelAny(keys[0]);
+            if (keys.Length == 2) return IndustryTerms.LabelAny(keys[0]) + " + " + IndustryTerms.LabelAny(keys[1]);
+            return IndustryTerms.LabelAny(keys[0]) + " 等 " + keys.Length + " 项";
+        }
+
+        /// <summary>兼容旧的单选调用：设成一个就等于只选它。</summary>
         private void SetIndustry(string key)
         {
-            if (!IndustryTerms.IsKnownAny(key)) key = "auto";
-            _cfg.Industry = key;
-            _cfg.Save();
-            Terminology.Domain = key;
-            SyncMenu();
-            AppConfig.Log("menu industry -> " + key + " (词库共 " + Terminology.TotalCount + " 条)");
-            ShowToast("行业词库：" + IndustryTerms.LabelAny(key));
+            if (key == "auto" || string.IsNullOrEmpty(key))
+            {
+                ClearIndustry();
+                return;
+            }
+            if (!IndustryTerms.IsKnownAny(key)) return;
+            _cfg.Industries = key;
+            ApplyIndustrySelection();
         }
 
         /// <summary>重建「行业词库」子菜单：内置行业 + 用户自己加的行业/岗位 + 管理入口。</summary>
@@ -459,18 +528,22 @@ namespace HoverTranslate
             _miIndustry.Clear();
 
             // 行业和岗位加起来二十多项，一次全铺开太长，拆成两个二级菜单，点开哪组看哪组
-            var autoItem = new Forms.ToolStripMenuItem("自动（全部行业与岗位）", null, delegate { SetIndustry("auto"); });
+            var autoItem = new Forms.ToolStripMenuItem("全部行业与岗位（不偏向）", null, delegate { ClearIndustry(); });
             _miIndustry["auto"] = autoItem;
             _indMenu.DropDownItems.Add(autoItem);
 
             var indGroup = new Forms.ToolStripMenuItem("行业");
             var postGroup = new Forms.ToolStripMenuItem("岗位");
+            // 多选：点一项菜单别关，可以接着点下一个
+            indGroup.DropDown.AutoClose = false;
+            postGroup.DropDown.AutoClose = false;
 
             foreach (string[] domain in IndustryTerms.AllDomains())
             {
                 string key = domain[0];
                 if (key == "auto") continue;
-                var item = new Forms.ToolStripMenuItem(domain[1], null, delegate { SetIndustry(key); });
+                var item = new Forms.ToolStripMenuItem(domain[1], null, delegate { ToggleIndustry(key); });
+                item.CheckOnClick = false;
                 _miIndustry[key] = item;
                 if (key.StartsWith("post-", StringComparison.Ordinal)) postGroup.DropDownItems.Add(item);
                 else indGroup.DropDownItems.Add(item);
