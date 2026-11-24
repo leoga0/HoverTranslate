@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.showOriginal = config.showOriginal
         panel.appliesTheme()
 
-        Terminology.domain = config.industry
+        Terminology.domains = selectedIndustries()
 
         // 配置说该开机起来，但 LaunchAgent 没了（挪过 app、被清理），这里补回来
         MacAutoStart.ensure(config.autoStart)
@@ -261,7 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let autoItem = NSMenuItem(title: "自动（全部行业与岗位）", action: #selector(setIndustry(_:)), keyEquivalent: "")
         autoItem.target = self
         autoItem.representedObject = "auto"
-        autoItem.state = config.industry == "auto" ? .on : .off
+        autoItem.state = config.industries.isEmpty ? .on : .off
         sub.addItem(autoItem)
         industryItems.append(autoItem)
 
@@ -274,7 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let item = NSMenuItem(title: title, action: #selector(setIndustry(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = key
-            item.state = config.industry == key ? .on : .off
+            item.state = selectedIndustries().contains(key) ? .on : .off
             industryItems.append(item)
             if key.hasPrefix("post-") {
                 postGroup.submenu?.addItem(item)
@@ -302,18 +302,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func syncIndustryChecks() {
+        let picked = selectedIndustries()
         for item in industryItems {
-            item.state = (item.representedObject as? String) == config.industry ? .on : .off
+            let key = item.representedObject as? String
+            if key == "auto" {
+                item.state = picked.isEmpty ? .on : .off
+            } else if let k = key {
+                item.state = picked.contains(k) ? .on : .off
+            }
         }
+    }
+
+    private func selectedIndustries() -> Set<String> {
+        return Set(config.industries.split(separator: ",").map { String($0) })
+    }
+
+    private func industrySummary() -> String {
+        let keys = config.industries.split(separator: ",").map { String($0) }
+        if keys.isEmpty { return "全部行业与岗位" }
+        if keys.count == 1 { return IndustryTerms.label(for: keys[0]) }
+        if keys.count == 2 { return IndustryTerms.label(for: keys[0]) + " + " + IndustryTerms.label(for: keys[1]) }
+        return IndustryTerms.label(for: keys[0]) + " 等 \(keys.count) 项"
     }
 
     @objc private func setIndustry(_ sender: NSMenuItem) {
         guard let key = sender.representedObject as? String else { return }
-        config.industry = IndustryTerms.isKnown(key) ? key : "auto"
-        Terminology.domain = config.industry
+
+        if key == "auto" {
+            config.industries = ""
+        } else if IndustryTerms.isKnown(key) {
+            var picked = selectedIndustries()
+            if picked.contains(key) {
+                picked.remove(key)
+            } else {
+                picked.insert(key)
+            }
+            config.industries = picked.sorted().joined(separator: ",")
+        }
+
+        Terminology.domains = selectedIndustries()
         syncIndustryChecks()
-        Config.log("industry -> \(config.industry)")
-        toast("行业词库：\(IndustryTerms.label(for: config.industry))")
+        Config.log("industry -> [\(config.industries)]")
+        toast("词库：\(industrySummary())")
     }
 
     @objc private func addIndustry() {
@@ -329,8 +359,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Terminology.invalidate()
         buildIndustryMenu()
-        config.industry = key
-        Terminology.domain = key
+        config.industries = key
+        Terminology.domains = selectedIndustries()
         syncIndustryChecks()
         Config.log("industry add -> \(key) \(label)")
         toast("已新增：\(label)")
