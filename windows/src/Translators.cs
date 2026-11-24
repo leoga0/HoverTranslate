@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -262,7 +262,7 @@ namespace HoverTranslate
 
             var ser = new JavaScriptSerializer();
             string json = ser.Serialize(payload);
-            string raw = HttpUtil.PostJson("https://transmart.qq.com/api/imt", json, 8000);
+            string raw = HttpUtil.PostJson("https://transmart.qq.com/api/imt", json, 2500);
 
             var r = new TranslationResult();
             r.Engine = Name;
@@ -297,7 +297,7 @@ namespace HoverTranslate
         {
             string lc = from == "zh" ? "zh-CHS" : "en";
             string form = "q=" + Uri.EscapeDataString(text) + "&from=Auto&to=Auto&salt=&sign=&lss=" + Uri.EscapeDataString(lc);
-            string raw = HttpUtil.PostForm("https://aidemo.youdao.com/trans", form, 8000);
+            string raw = HttpUtil.PostForm("https://aidemo.youdao.com/trans", form, 2500);
             var r = new TranslationResult();
             r.Engine = Name;
 
@@ -332,7 +332,7 @@ namespace HoverTranslate
         {
             string pair = (from == "zh" ? "zh-CN" : "en") + "|" + (to == "zh" ? "zh-CN" : "en");
             string url = "https://api.mymemory.translated.net/get?q=" + Uri.EscapeDataString(text) + "&langpair=" + Uri.EscapeDataString(pair);
-            string raw = HttpUtil.Get(url, 9000, null);
+            string raw = HttpUtil.Get(url, 2500, null);
             var r = new TranslationResult();
             r.Engine = Name;
             if (string.IsNullOrEmpty(raw)) { r.Error = "空响应"; return r; }
