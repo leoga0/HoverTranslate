@@ -273,8 +273,23 @@ namespace HoverTranslate
             Check("财税词条命中", finHits.Count > 0 && finHits[0].i == "fin",
                   finHits.Count == 0 ? "未命中" : finHits[0].n + "/" + finHits[0].i);
 
-            Check("行业词库菜单项齐全", _indMenu != null && _indMenu.DropDownItems.Count >= 15,
-                  _indMenu == null ? "无子菜单" : _indMenu.DropDownItems.Count + " 项");
+            Check("行业与岗位词条都进了菜单", _miIndustry.Count >= 20,
+                  _indMenu == null ? "无子菜单" : _miIndustry.Count + " 项");
+
+            // 二十多项不能一次铺开，必须分成「行业」「岗位」两个二级菜单
+            int groupCount = 0;
+            bool hasPostGroup = false;
+            if (_indMenu != null)
+            {
+                foreach (System.Windows.Forms.ToolStripItem it in _indMenu.DropDownItems)
+                {
+                    var mi = it as System.Windows.Forms.ToolStripMenuItem;
+                    if (mi == null || mi.DropDownItems.Count == 0) continue;
+                    groupCount++;
+                    if (mi.Text == "岗位") hasPostGroup = true;
+                }
+            }
+            Check("行业与岗位拆成二级菜单", groupCount == 2 && hasPostGroup, "分组=" + groupCount);
 
             // 技术词库不能被行业词库挤掉
             var techHits = Terminology.Match("服务熔断之后要降级", 2);
