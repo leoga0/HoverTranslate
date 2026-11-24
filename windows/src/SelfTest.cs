@@ -252,26 +252,55 @@ namespace HoverTranslate
             Check("深色卡片 状态翻转", _cfg.DarkTheme == !before, "DarkTheme=" + _cfg.DarkTheme);
             Check("深色卡片 菜单勾选与状态一致", _miDark.Checked == _cfg.DarkTheme, "Checked=" + _miDark.Checked);
 
-            // 10. 行业词库切换 + 匹配是否真的偏向该行业
+            // 10. 行业/岗位词库：单选 → 多选
+            _miIndustry["auto"].PerformClick();
+            Check("词库 初始为全部", string.IsNullOrEmpty(_cfg.Industries), "Industries='" + _cfg.Industries + "'");
+
             _miIndustry["med"].PerformClick();
-            Check("行业词库 切到医疗健康", _cfg.Industry == "med", "Industry=" + _cfg.Industry);
-            Check("行业词库 菜单勾选唯一", _miIndustry["med"].Checked && !_miIndustry["auto"].Checked && !_miIndustry["ec"].Checked,
+            Check("词库 点一下选中医疗健康", _cfg.Industries == "med", "Industries=" + _cfg.Industries);
+            Check("词库 菜单勾选跟随", _miIndustry["med"].Checked && !_miIndustry["auto"].Checked,
                   "med=" + _miIndustry["med"].Checked);
-            Check("行业词库 写入匹配引擎", Terminology.Domain == "med", "Domain=" + Terminology.Domain);
+            Check("词库 写进匹配引擎", Terminology.IsDomainSelected("med"), "选中=" + Terminology.Domain);
 
             var medHits = Terminology.Match("这家医院的起付线是多少", 2);
             Check("医疗词条命中", medHits.Count > 0 && medHits[0].i == "med",
                   medHits.Count == 0 ? "未命中" : medHits[0].n + "/" + medHits[0].i);
 
+            // 多选：再点一个，两个都要留着
             _miIndustry["ec"].PerformClick();
+            Check("词库 支持多选", _cfg.Industries.Contains("med") && _cfg.Industries.Contains("ec"),
+                  "Industries=" + _cfg.Industries);
+            Check("词库 多选时菜单都打勾", _miIndustry["med"].Checked && _miIndustry["ec"].Checked,
+                  "med=" + _miIndustry["med"].Checked + " ec=" + _miIndustry["ec"].Checked);
+            Check("词库 多选都进匹配引擎",
+                  Terminology.IsDomainSelected("med") && Terminology.IsDomainSelected("ec"),
+                  "选中=" + Terminology.Domain);
+
             var ecHits = Terminology.Match("看下这个月的动销率和复购率", 2);
             Check("电商词条命中", ecHits.Count > 0 && ecHits[0].i == "ec",
                   ecHits.Count == 0 ? "未命中" : ecHits[0].n + "/" + ecHits[0].i);
+
+            // 再点一次取消这一项，另一项要留着
+            _miIndustry["med"].PerformClick();
+            Check("词库 再点一次取消该项",
+                  !Terminology.IsDomainSelected("med") && Terminology.IsDomainSelected("ec"),
+                  "Industries=" + _cfg.Industries);
 
             _miIndustry["fin"].PerformClick();
             var finHits = Terminology.Match("账期太长的应收账款要去做保理", 2);
             Check("财税词条命中", finHits.Count > 0 && finHits[0].i == "fin",
                   finHits.Count == 0 ? "未命中" : finHits[0].n + "/" + finHits[0].i);
+
+            // 岗位也能和其他行业一起选
+            _miIndustry["post-op"].PerformClick();
+            Check("词库 行业与岗位可混选",
+                  Terminology.IsDomainSelected("ec") && Terminology.IsDomainSelected("post-op"),
+                  "选中=" + Terminology.Domain);
+
+            _miIndustry["auto"].PerformClick();
+            Check("词库 全部项清空多选", string.IsNullOrEmpty(_cfg.Industries) && !Terminology.IsDomainSelected("ec"),
+                  "Industries='" + _cfg.Industries + "'");
+            _miIndustry["ec"].PerformClick();
 
             Check("行业与岗位词条都进了菜单", _miIndustry.Count >= 20,
                   _indMenu == null ? "无子菜单" : _miIndustry.Count + " 项");
@@ -307,7 +336,8 @@ namespace HoverTranslate
                 && disk.TargetLang == _cfg.TargetLang
                 && disk.CardAnchor == _cfg.CardAnchor
                 && disk.DarkTheme == _cfg.DarkTheme
-                && disk.Industry == _cfg.Industry;
+                && disk.Industry == _cfg.Industry
+                && disk.Industries == _cfg.Industries;
             Check("开关全部写入配置文件并可读回", same,
                   same ? "" : "磁盘取值与内存不一致");
 
@@ -319,7 +349,9 @@ namespace HoverTranslate
                 && _miAutoDim.Checked == _cfg.AutoDim
                 && _miSel.Checked == _cfg.SelectionExplain
                 && _miDark.Checked == _cfg.DarkTheme
-                && _miIndustry[_cfg.Industry].Checked
+                && (_cfg.Industries.Length == 0
+                    ? _miIndustry["auto"].Checked
+                    : _miIndustry[_cfg.Industries.Split(',')[0]].Checked)
                 && _miTargetBoth.Checked == (_cfg.TargetLang == "both")
                 && _miAnchorCorner.Checked == (_cfg.CardAnchor == 2);
             Check("SyncMenu 全量同步", allSynced, "");
