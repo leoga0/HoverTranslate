@@ -22,7 +22,7 @@ final class Config {
     var hoverDelay: TimeInterval {
         get {
             let v = defaults.double(forKey: prefix + "hoverDelay")
-            return v <= 0 ? 0.34 : v
+            return v <= 0 ? 0.22 : v
         }
         set { defaults.set(newValue, forKey: prefix + "hoverDelay") }
     }
