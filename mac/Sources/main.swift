@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dirItems: [NSMenuItem] = []
     private var sourceItem: NSMenuItem!
     private var darkItem: NSMenuItem!
+    private var autoStartItem: NSMenuItem!
     private var industryMenu: NSMenuItem!
     private var industryItems: [NSMenuItem] = []
 
@@ -44,6 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.appliesTheme()
 
         Terminology.domain = config.industry
+
+        // 配置说该开机起来，但 LaunchAgent 没了（挪过 app、被清理），这里补回来
+        MacAutoStart.ensure(config.autoStart)
 
         setupStatusItem()
         setupHotkeys()
@@ -150,6 +154,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         themeMenu.submenu = themeSub
         menu.addItem(themeMenu)
 
+        autoStartItem = NSMenuItem(title: "开机自动启动", action: #selector(toggleAutoStart), keyEquivalent: "")
+        autoStartItem.target = self
+        autoStartItem.state = MacAutoStart.isEnabled ? .on : .off
+        menu.addItem(autoStartItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let permItem = NSMenuItem(title: "打开辅助功能设置", action: #selector(openAccessibility), keyEquivalent: "")
@@ -222,6 +231,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         config.showOriginal = !config.showOriginal
         sourceItem.state = config.showOriginal ? .on : .off
         panel.showOriginal = config.showOriginal
+    }
+
+    @objc private func toggleAutoStart() {
+        if MacAutoStart.isEnabled {
+            MacAutoStart.disable()
+            config.autoStart = false
+            autoStartItem.state = .off
+            panel.showMessage("已关闭开机自启", detail: "")
+        } else {
+            let ok = MacAutoStart.enable()
+            config.autoStart = ok
+            autoStartItem.state = ok ? .on : .off
+            if !ok {
+                panel.showMessage("自启没设上", detail: "系统设置 → 通用 → 登录项 里手动添加 HoverTranslate")
+            }
+        }
     }
 
 
