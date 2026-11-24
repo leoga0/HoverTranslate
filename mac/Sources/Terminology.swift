@@ -17,8 +17,21 @@ enum Terminology {
         }
     }
 
-    /// 当前选中的行业代码，由菜单写入；auto 表示不偏向任何行业。
-    static var domain: String = "auto"
+    /// 选中的行业/岗位，可以同时选几个；空集合表示不偏向。
+    static var domains: Set<String> = []
+
+    /// 兼容单选的旧入口：读出来是逗号串，设进去就是整体替换。
+    static var domain: String {
+        get { return domains.isEmpty ? "auto" : domains.sorted().joined(separator: ",") }
+        set {
+            var set = Set<String>()
+            for part in newValue.split(separator: ",") {
+                let key = part.trimmingCharacters(in: .whitespaces)
+                if !key.isEmpty && key != "auto" { set.insert(key) }
+            }
+            domains = set
+        }
+    }
 
     private static var all: [Term] = load()
 
@@ -119,11 +132,10 @@ enum Terminology {
         return nil
     }
 
-    /// 是否属于当前选中的行业：选了具体行业时，该行业术语优先。
+    /// 是否属于当前选中的行业/岗位（多选）：命中任意一个就先讲。
     private static func domainPreferred(_ t: Term) -> Bool {
         if t.i.isEmpty { return false }
-        if domain.isEmpty || domain == "auto" { return false }
-        return t.i == domain
+        return domains.contains(t.i)
     }
 
     private static func weight(_ t: Term) -> Int {
