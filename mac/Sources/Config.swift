@@ -64,12 +64,27 @@ final class Config {
         set { defaults.set(newValue, forKey: prefix + "selectionExplain") }
     }
 
+    /// 选中的行业/岗位，逗号分隔，可多选；空表示不偏向。
+    var industries: String {
+        get {
+            if let v = defaults.string(forKey: prefix + "industries") { return v }
+            // 老版本只存了单选 industry，读的时候迁过来
+            let single = defaults.string(forKey: prefix + "industry") ?? ""
+            return single == "auto" ? "" : single
+        }
+        set { defaults.set(newValue, forKey: prefix + "industries") }
+    }
+
+    /// 主选那一个，给「给当前行业加词条」这类只认单个行业的入口用。
     var industry: String {
         get {
-            let v = defaults.string(forKey: prefix + "industry") ?? "auto"
-            return IndustryTerms.isKnown(v) ? v : "auto"
+            let v = industries
+            guard let first = v.split(separator: ",").first else { return "auto" }
+            return String(first)
         }
-        set { defaults.set(newValue, forKey: prefix + "industry") }
+        set {
+            industries = (newValue == "auto" || newValue.isEmpty) ? "" : newValue
+        }
     }
 
     var liftLines: Int {
