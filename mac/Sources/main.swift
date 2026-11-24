@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         targetMenu.submenu = targetSub
         menu.addItem(targetMenu)
 
-        industryMenu = NSMenuItem(title: "行业词库", action: nil, keyEquivalent: "")
+        industryMenu = NSMenuItem(title: "行业 / 岗位词库", action: nil, keyEquivalent: "")
         industryMenu.submenu = NSMenu()
         menu.addItem(industryMenu)
         buildIndustryMenu()
