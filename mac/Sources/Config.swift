@@ -85,6 +85,15 @@ final class Config {
         set { defaults.set(newValue, forKey: prefix + "cardAnchor") }
     }
 
+    /// 开机自启：默认开，菜单里点一下可以关。
+    var autoStart: Bool {
+        get {
+            if defaults.object(forKey: prefix + "autoStart") == nil { return true }
+            return defaults.bool(forKey: prefix + "autoStart")
+        }
+        set { defaults.set(newValue, forKey: prefix + "autoStart") }
+    }
+
     var fontSize: CGFloat {
         get {
             let v = defaults.double(forKey: prefix + "fontSize")
