@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Windows.Threading;
+using Microsoft.Win32;
 
 namespace HoverTranslate
 {
@@ -72,6 +73,7 @@ namespace HoverTranslate
 
                     app.PrepareSelfTest();
                     app.RunMenuChecks();
+                    app.RunAutoStartChecks();
                     app.RenderSampleCards();
                     if (app._testLog != null) sb = app._testLog;
                 fail = app._testFail;
@@ -123,6 +125,70 @@ namespace HoverTranslate
             if (!ok) _testFail++;
             _testLog.AppendLine((ok ? "PASS  " : "FAIL  ") + what +
                                 (string.IsNullOrEmpty(detail) ? "" : "  [" + detail + "]"));
+        }
+
+        /// <summary>
+        /// 开机自启的回归：状态机整套走一遍。用内存后端，因为自检进程常常被降权，
+        /// 真实注册表根本写不进去，用真键会让这项检查永远失败。
+        /// </summary>
+        private void RunAutoStartChecks()
+        {
+            try
+            {
+                AutoStart.UseMemoryStoreForTest = true;
+                AutoStart.MemoryStoreSetForTest(null, true, false);
+
+                Check("自启 初始状态是未注册", AutoStart.State() == AutoStartState.Off, "state=" + AutoStart.State());
+
+                string note;
+                bool ok = AutoStart.Enable(out note);
+                Check("自启 写入后状态变开启", AutoStart.State() == AutoStartState.On,
+                      "state=" + AutoStart.State() + " note=" + note);
+
+                string cmd = AutoStart.RegisteredCommand() == null ? "" : AutoStart.RegisteredCommand();
+                Check("自启 启动命令带 --autostart", cmd.IndexOf(AutoStart.BootArg, StringComparison.OrdinalIgnoreCase) >= 0, cmd);
+                Check("自启 命令指向当前 exe",
+                      string.Equals(AutoStart.ParseExe(cmd), AutoStart.ExePath(), StringComparison.OrdinalIgnoreCase),
+                      AutoStart.ParseExe(cmd));
+
+                // 指向一个已经不存在的文件：要认成 Broken，不能当成好的
+                AutoStart.MemoryStoreSetForTest("\"C:\\nope\\HoverTranslate.exe\" " + AutoStart.BootArg, true, false);
+                Check("自启 路径失效时识别为坏路径", AutoStart.State() == AutoStartState.Broken, "state=" + AutoStart.State());
+
+                bool healed = AutoStart.Ensure(true);
+                Check("自启 坏路径能被启动自愈修好", healed && AutoStart.State() == AutoStartState.On,
+                      "healed=" + healed + " state=" + AutoStart.State());
+
+                // 被系统禁用：状态要认出来，且自愈不许擅自替用户打开
+                AutoStart.MemoryStoreSetForTest("\"" + AutoStart.ExePath() + "\" " + AutoStart.BootArg, false, false);
+                Check("自启 被系统禁用时识别出来", AutoStart.State() == AutoStartState.Disabled, "state=" + AutoStart.State());
+                bool touched = AutoStart.Ensure(true);
+                Check("自启 被禁用时不自作主张打开", !touched && AutoStart.State() == AutoStartState.Disabled,
+                      "touched=" + touched + " state=" + AutoStart.State());
+
+                AutoStart.Disable();
+                Check("自启 关闭后回到未注册", AutoStart.State() == AutoStartState.Off, "state=" + AutoStart.State());
+                Check("自启 关闭时顺手撤掉兜底快捷方式", !AutoStart.StartupShortcutExists(), "shortcut=" + AutoStart.StartupShortcutExists());
+
+                // 菜单这条路：点一下要同时改配置、启动项和勾选
+                _miAutoStart.PerformClick();
+                Check("自启 菜单点击后注册生效", AutoStart.State() == AutoStartState.On, "state=" + AutoStart.State());
+                Check("自启 菜单点击写入配置", _cfg.AutoStart, "AutoStart=" + _cfg.AutoStart);
+                Check("自启 菜单勾选跟随真实状态", _miAutoStart.Checked, "Checked=" + _miAutoStart.Checked);
+
+                _miAutoStart.PerformClick();
+                Check("自启 再点一次关掉", !_cfg.AutoStart && AutoStart.State() == AutoStartState.Off,
+                      "AutoStart=" + _cfg.AutoStart + " state=" + AutoStart.State());
+            }
+            catch (Exception ex)
+            {
+                Check("自启 回归执行", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                AutoStart.UseMemoryStoreForTest = false;
+                AutoStart.MemoryStoreSetForTest(null, true, false);
+            }
         }
 
         /// <summary>点击后核对：内存里的值、菜单勾选、磁盘上的配置三处是否同时翻过去了。</summary>
