@@ -43,7 +43,8 @@ namespace HoverTranslate
             Industry = "auto";
             DarkTheme = true;
             FontSize = 15;
-            AutoStart = false;
+            // 装好就跟着开机起来，菜单里点一下可以关掉
+            AutoStart = true;
             HotkeyTranslate = "Ctrl+Alt+T";
             HotkeySwitch = "Ctrl+Alt+D";
             HotkeyToggle = "Ctrl+Alt+H";
