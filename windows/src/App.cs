@@ -37,6 +37,7 @@ namespace HoverTranslate
         private Forms.ToolStripMenuItem _miFontMid;
         private Forms.ToolStripMenuItem _miFontSmall;
         private Forms.ToolStripMenuItem _miAutoStart;
+        private Forms.ToolStripMenuItem _miAutoStartDiag;
         private Forms.ToolStripMenuItem _indMenu;
         private readonly System.Collections.Generic.Dictionary<int, Forms.ToolStripMenuItem> _miLift =
             new System.Collections.Generic.Dictionary<int, Forms.ToolStripMenuItem>();
@@ -45,6 +46,12 @@ namespace HoverTranslate
 
         /// <summary>自检模式：不弹卡片、不建托盘图标，只跑开关逻辑。</summary>
         internal bool Headless;
+
+        /// <summary>这次是不是开机自启拉起来的（带了 --autostart 参数）。</summary>
+        internal static bool BootMode;
+
+        private const string SignalName = "HoverTranslate.AlreadyRunning.Signal";
+        private static EventWaitHandle _alreadyRunningSignal;
 
         private DispatcherTimer _timer;
         private HwndSource _hotkeyHost;
@@ -81,12 +88,26 @@ namespace HoverTranslate
                 }
             }
 
+            BootMode = AutoStart.LaunchArgIsBoot(args);
+
             try
             {
+                try
+                {
+                    _alreadyRunningSignal = new EventWaitHandle(false, EventResetMode.AutoReset, SignalName);
+                }
+                catch { _alreadyRunningSignal = null; }
+
                 bool created;
                 using (var mutex = new Mutex(true, "HoverTranslate.SingleInstance.Mutex", out created))
                 {
-                    if (!created && !allowMultiple) return;
+                    if (!created && !allowMultiple)
+                    {
+                        // 已经被自启拉起来的时候用户又点了图标：叫醒那一份给个提示，
+                        // 否则双击没反应，看起来就像程序没启动。
+                        try { if (_alreadyRunningSignal != null) _alreadyRunningSignal.Set(); } catch { }
+                        return;
+                    }
                     Native.EnablePerMonitorDpi();
                     var app = new TranslatorApp();
                     app.DispatcherUnhandledException += delegate(object s, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
@@ -119,6 +140,16 @@ namespace HoverTranslate
             Terminology.Domain = _cfg.Industry;
             _service = new TranslationService();
 
+            // 开机自启以配置为准：配置说开着，注册项被清掉或用旧路径，这里补回来。
+            try
+            {
+                if (!Headless && AutoStart.Ensure(_cfg.AutoStart))
+                {
+                    AppConfig.Log("autostart 校准完成 -> " + AutoStart.State());
+                }
+            }
+            catch (Exception ex) { AppConfig.Log("autostart ensure: " + ex.Message); }
+
             _card = new CardWindow();
             _card.QuietMode = _cfg.QuietMode;
             _card.CardAnchor = _cfg.CardAnchor;
@@ -127,11 +158,7 @@ namespace HoverTranslate
             _card.ApplyTheme(_cfg.DarkTheme, _cfg.FontSize);
             AppConfig.Log("card ok");
 
-            try { SetupTray(); AppConfig.Log("tray ok"); }
-            catch (Exception ex) { AppConfig.Log("tray fail: " + ex.Message + "\n" + ex.StackTrace); }
-
-            try { SetupHotkeys(); AppConfig.Log("hotkeys ok"); }
-            catch (Exception ex) { AppConfig.Log("hotkeys fail: " + ex.Message + "\n" + ex.StackTrace); }
+            InstallShell();
 
             _selTimer = new DispatcherTimer(DispatcherPriority.Background);
             _selTimer.Interval = TimeSpan.FromMilliseconds(450);
@@ -144,12 +171,74 @@ namespace HoverTranslate
 
             AppConfig.Log("started dir=" + _cfg.Direction + " hover=" + _cfg.HoverEnabled + " delay=" + _cfg.HoverDelayMs);
 
+            WatchSecondInstance();
+        }
+
+        /// <summary>
+        /// 已被自启拉起来的实例在跑，用户又点了图标：给个提示，别让人觉得没反应。
+        /// </summary>
+        private void WatchSecondInstance()
+        {
+            if (_alreadyRunningSignal == null) return;
+            try
+            {
+                var t = new Thread(delegate()
+                {
+                    while (true)
+                    {
+                        try
+                        {
+                            if (!_alreadyRunningSignal.WaitOne(Timeout.Infinite)) continue;
+                            Dispatcher.BeginInvoke(new Action(delegate
+                            {
+                                ShowToast("悬停翻译已经在运行，图标在右下角 ^ 里");
+                            }));
+                        }
+                        catch { return; }
+                    }
+                });
+                t.IsBackground = true;
+                t.Start();
+            }
+            catch (Exception ex) { AppConfig.Log("watch second: " + ex.Message); }
+        }
+
+        /// <summary>
+        /// 挂托盘和全局热键。开机自启时桌面还没铺好，马上建托盘容易建出一个不显示的图标，
+        /// 所以自启这条路推迟几秒再挂。
+        /// </summary>
+        private void InstallShell()
+        {
+            if (BootMode)
+            {
+                AppConfig.Log("boot mode: 推迟 5 秒挂托盘 exe=" + AutoStart.ExePath() + " autostart=" + AutoStart.State());
+                var bootTimer = new DispatcherTimer();
+                bootTimer.Interval = TimeSpan.FromSeconds(5);
+                bootTimer.Tick += delegate
+                {
+                    bootTimer.Stop();
+                    MountShell("boot");
+                };
+                bootTimer.Start();
+                return;
+            }
+            MountShell("run");
+        }
+
+        private void MountShell(string tag)
+        {
+            try { SetupTray(); AppConfig.Log("tray ok (" + tag + ")"); }
+            catch (Exception ex) { AppConfig.Log("tray fail (" + tag + "): " + ex.Message + "\n" + ex.StackTrace); }
+
+            try { SetupHotkeys(); AppConfig.Log("hotkeys ok (" + tag + ")"); }
+            catch (Exception ex) { AppConfig.Log("hotkeys fail (" + tag + "): " + ex.Message + "\n" + ex.StackTrace); }
         }
 
         // ---------------- 托盘 ----------------
 
         private void SetupTray()
         {
+            if (_tray != null) return;
             _tray = new Forms.NotifyIcon();
             _tray.Icon = Native.BuildTrayIcon(_cfg.DarkTheme);
             _tray.Text = "悬停翻译 · 鼠标停在文字上即出译文";
@@ -157,6 +246,7 @@ namespace HoverTranslate
 
             _menu = new Forms.ContextMenuStrip();
             _menu.ShowImageMargin = false;
+            _menu.ShowItemToolTips = true;
             // 展开菜单前先按配置刷新勾选，并把卡片收掉：卡片是置顶窗口，
             // 停在托盘附近时会挡住弹出菜单，点上去像是开关失灵。
             _menu.Opening += delegate
@@ -217,6 +307,7 @@ namespace HoverTranslate
             themeMenu.DropDownItems.Add(_miSel);
 
             _miAutoStart = new Forms.ToolStripMenuItem("开机自动启动", null, delegate { ToggleAutoStart(); });
+            _miAutoStartDiag = new Forms.ToolStripMenuItem("开机自启没生效？检查一下…", null, delegate { ShowAutoStartDiag(); });
 
             var miOpenCfg = new Forms.ToolStripMenuItem("打开配置文件", null, delegate
             {
@@ -248,6 +339,7 @@ namespace HoverTranslate
             _menu.Items.Add(posMenu);
             _menu.Items.Add(themeMenu);
             _menu.Items.Add(_miAutoStart);
+            _menu.Items.Add(_miAutoStartDiag);
             _menu.Items.Add(new Forms.ToolStripSeparator());
             _menu.Items.Add(miOpenCfg);
             _menu.Items.Add(miHelp);
@@ -273,7 +365,13 @@ namespace HoverTranslate
             if (_miQuiet != null) _miQuiet.Checked = _cfg.QuietMode;
             if (_miAutoDim != null) _miAutoDim.Checked = _cfg.AutoDim;
             if (_miSel != null) _miSel.Checked = _cfg.SelectionExplain;
-            if (_miAutoStart != null) _miAutoStart.Checked = IsAutoStartEnabled();
+            if (_miAutoStart != null)
+            {
+                // 勾选看真实状态：被系统禁用的启动项不该显示成开着，否则用户以为它是好的。
+                AutoStartState st = AutoStart.State();
+                _miAutoStart.Checked = st == AutoStartState.On || AutoStart.StartupShortcutExists();
+                _miAutoStart.ToolTipText = AutoStart.StateText(st);
+            }
 
             if (_miTargetZh != null)
             {
@@ -552,46 +650,66 @@ namespace HoverTranslate
 
         // ---------------- 开机自启 ----------------
 
-        private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-        private const string RunName = "HoverTranslate";
-
-        private static bool IsAutoStartEnabled()
-        {
-            try
-            {
-                using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKey, false))
-                {
-                    if (k == null) return false;
-                    object v = k.GetValue(RunName);
-                    return v != null;
-                }
-            }
-            catch { return false; }
-        }
-
         private void ToggleAutoStart()
         {
-            try
+            AutoStartState st = AutoStart.State();
+            bool registered = st == AutoStartState.On || AutoStart.StartupShortcutExists();
+
+            if (!registered)
             {
-                using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKey, true))
+                string note;
+                bool ok = AutoStart.Enable(out note);
+                _cfg.AutoStart = true;
+                _cfg.Save();
+                SyncMenu();
+                AppConfig.Log("menu autostart -> " + AutoStart.State() + (note.Length > 0 ? " (" + note + ")" : ""));
+
+                if (ok) ShowToast("已开启开机自启");
+                else
                 {
-                    if (k == null) return;
-                    if (IsAutoStartEnabled())
-                    {
-                        k.DeleteValue(RunName, false);
-                        _miAutoStart.Checked = false;
-                        ShowToast("已关闭开机自启");
-                    }
-                    else
-                    {
-                        string exe = Process.GetCurrentProcess().MainModule.FileName;
-                        k.SetValue(RunName, "\"" + exe + "\"");
-                        _miAutoStart.Checked = true;
-                        ShowToast("已开启开机自启");
-                    }
+                    MessageBox.Show(
+                        "自启没写成功。\n\n" + AutoStart.Diag() +
+                        "\n如果是安全软件拦了注册表，把它加进信任列表后再点一次。",
+                        "悬停翻译", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
-            catch (Exception ex) { AppConfig.Log("autostart: " + ex.Message); }
+            else
+            {
+                AutoStart.Disable();
+                _cfg.AutoStart = false;
+                _cfg.Save();
+                SyncMenu();
+                AppConfig.Log("menu autostart -> off");
+                ShowToast("已关闭开机自启");
+            }
+        }
+
+        /// <summary>
+        /// 自启失效时给用户看的东西：到底卡在哪一环，能不能就地重写。
+        /// </summary>
+        private void ShowAutoStartDiag()
+        {
+            try
+            {
+                var r = MessageBox.Show(
+                    AutoStart.Diag() + "\n要现在重新写入一次自启吗？",
+                    "开机自启检查", MessageBoxButton.YesNo, MessageBoxImage.Information);
+
+                if (r != MessageBoxResult.Yes) return;
+
+                string note;
+                bool ok = AutoStart.Enable(out note);
+                _cfg.AutoStart = true;
+                _cfg.Save();
+                SyncMenu();
+                AppConfig.Log("diag autostart rewrite ok=" + ok + " " + note);
+
+                MessageBox.Show(
+                    ok ? "已重新写入。\n\n" + AutoStart.Diag()
+                       : "还是没写成功：" + note + "\n\n" + AutoStart.Diag(),
+                    "开机自启检查", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex) { AppConfig.Log("autostart diag: " + ex.Message); }
         }
 
         // ---------------- 热键 ----------------
