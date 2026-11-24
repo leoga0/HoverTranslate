@@ -38,6 +38,8 @@ namespace HoverTranslate
         private Forms.ToolStripMenuItem _miFontSmall;
         private Forms.ToolStripMenuItem _miAutoStart;
         private Forms.ToolStripMenuItem _miAutoStartDiag;
+        private readonly System.Collections.Generic.Dictionary<int, Forms.ToolStripMenuItem> _miDelay =
+            new System.Collections.Generic.Dictionary<int, Forms.ToolStripMenuItem>();
         private Forms.ToolStripMenuItem _indMenu;
         private readonly System.Collections.Generic.Dictionary<int, Forms.ToolStripMenuItem> _miLift =
             new System.Collections.Generic.Dictionary<int, Forms.ToolStripMenuItem>();
@@ -165,7 +167,7 @@ namespace HoverTranslate
             _selTimer.Tick += OnSelectionSettled;
 
             _timer = new DispatcherTimer(DispatcherPriority.Background);
-            _timer.Interval = TimeSpan.FromMilliseconds(110);
+            _timer.Interval = TimeSpan.FromMilliseconds(80);
             _timer.Tick += OnTick;
             _timer.Start();
 
@@ -246,6 +248,9 @@ namespace HoverTranslate
 
             _menu = new Forms.ContextMenuStrip();
             _menu.ShowImageMargin = false;
+            // 勾选标记要占左边这一条，关掉图标栏时得单独把 check margin 打开，
+            // 否则 Checked 明明是 true，菜单上却一个勾都看不见。
+            _menu.ShowCheckMargin = true;
             _menu.ShowItemToolTips = true;
             // 展开菜单前先按配置刷新勾选，并把卡片收掉：卡片是置顶窗口，
             // 停在托盘附近时会挡住弹出菜单，点上去像是开关失灵。
@@ -266,7 +271,7 @@ namespace HoverTranslate
             targetMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
             targetMenu.DropDownItems.Add(_miTargetBoth);
 
-            var indMenu = new Forms.ToolStripMenuItem("行业词库");
+            var indMenu = new Forms.ToolStripMenuItem("行业 / 岗位词库");
             _indMenu = indMenu;
             BuildIndustryMenu();
 
@@ -284,6 +289,17 @@ namespace HoverTranslate
                 var item = new Forms.ToolStripMenuItem("上方多让 " + n + " 行", null, delegate { SetLift(n); });
                 _miLift[n] = item;
                 posMenu.DropDownItems.Add(item);
+            }
+
+            var speedMenu = new Forms.ToolStripMenuItem("触发速度");
+            int[] speeds = new int[] { 150, 220, 380 };
+            string[] speedNames = new string[] { "快（150 毫秒）", "标准（220 毫秒）", "慢（380 毫秒）" };
+            for (int si = 0; si < speeds.Length; si++)
+            {
+                int ms = speeds[si];
+                var item = new Forms.ToolStripMenuItem(speedNames[si], null, delegate { SetDelay(ms); });
+                _miDelay[ms] = item;
+                speedMenu.DropDownItems.Add(item);
             }
 
             var themeMenu = new Forms.ToolStripMenuItem("外观");
@@ -307,7 +323,7 @@ namespace HoverTranslate
             themeMenu.DropDownItems.Add(_miSel);
 
             _miAutoStart = new Forms.ToolStripMenuItem("开机自动启动", null, delegate { ToggleAutoStart(); });
-            _miAutoStartDiag = new Forms.ToolStripMenuItem("开机自启没生效？检查一下…", null, delegate { ShowAutoStartDiag(); });
+            _miAutoStartDiag = new Forms.ToolStripMenuItem("自启状态检查…", null, delegate { ShowAutoStartDiag(); });
 
             var miOpenCfg = new Forms.ToolStripMenuItem("打开配置文件", null, delegate
             {
@@ -337,6 +353,7 @@ namespace HoverTranslate
             _menu.Items.Add(targetMenu);
             _menu.Items.Add(indMenu);
             _menu.Items.Add(posMenu);
+            _menu.Items.Add(speedMenu);
             _menu.Items.Add(themeMenu);
             _menu.Items.Add(_miAutoStart);
             _menu.Items.Add(_miAutoStartDiag);
@@ -371,6 +388,14 @@ namespace HoverTranslate
                 AutoStartState st = AutoStart.State();
                 _miAutoStart.Checked = st == AutoStartState.On || AutoStart.StartupShortcutExists();
                 _miAutoStart.ToolTipText = AutoStart.StateText(st);
+            }
+
+            if (_miDelay.Count > 0)
+            {
+                foreach (var kv in _miDelay)
+                {
+                    kv.Value.Checked = Math.Abs(kv.Key - _cfg.HoverDelayMs) < 30;
+                }
             }
 
             if (_miTargetZh != null)
@@ -433,9 +458,15 @@ namespace HoverTranslate
             _indMenu.DropDownItems.Clear();
             _miIndustry.Clear();
 
+            bool postSepAdded = false;
             foreach (string[] domain in IndustryTerms.AllDomains())
             {
                 string key = domain[0];
+                if (!postSepAdded && key.StartsWith("post-", StringComparison.Ordinal))
+                {
+                    _indMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
+                    postSepAdded = true;
+                }
                 var item = new Forms.ToolStripMenuItem(domain[1], null, delegate { SetIndustry(key); });
                 _miIndustry[key] = item;
                 _indMenu.DropDownItems.Add(item);
@@ -515,6 +546,15 @@ namespace HoverTranslate
                 Process.Start("explorer.exe", "/select,\"" + path + "\"");
             }
             catch { }
+        }
+
+        private void SetDelay(int ms)
+        {
+            _cfg.HoverDelayMs = Math.Max(120, Math.Min(2000, ms));
+            _cfg.Save();
+            SyncMenu();
+            ShowToast("触发速度：" + _cfg.HoverDelayMs + " 毫秒");
+            AppConfig.Log("menu delay -> " + _cfg.HoverDelayMs);
         }
 
         private void SetAnchor(int mode)
@@ -852,20 +892,30 @@ namespace HoverTranslate
             int req = ++_requestId;
             int maxLen = _cfg.MaxTextLength;
 
+            // 先把卡片亮出来，再干活。取词和翻译都可能要几百毫秒，
+            // 之前这段时间屏幕上什么都没有，用户以为程序没反应。
+            try
+            {
+                _card.CardAnchor = _cfg.CardAnchor;
+                _cardShownAt = DateTime.UtcNow;
+                _card.ShowPending(p.X, p.Y, manual ? "取词中…" : "取词中…");
+            }
+            catch (Exception ex) { AppConfig.Log("pending card: " + ex.Message); }
+
             ThreadPool.QueueUserWorkItem(delegate
             {
                 GrabResult g = null;
                 string winTitle = Native.WindowTitleAt(p.X, p.Y);
 
                 // 浏览器等应用的可访问性树是惰性构建的：首次询问常返回容器或失败，
-                // 短暂重试一两次即可拿到真实文本节点。
-                for (int attempt = 0; attempt < 3; attempt++)
+                // 重试一次即可拿到真实文本节点。间隔压到 70ms，别让用户干等。
+                for (int attempt = 0; attempt < 2; attempt++)
                 {
                     try { g = TextGrabber.Grab(p.X, p.Y, maxLen); }
                     catch (Exception ex) { AppConfig.Log("grab thread: " + ex.Message); }
 
                     if (g != null && g.Found && TextShape.Worth(g.Text) && !IsWindowTitle(g.Text, winTitle)) break;
-                    Thread.Sleep(170);
+                    if (attempt == 0) Thread.Sleep(70);
                 }
 
                 Dispatcher.BeginInvoke(new Action(delegate
@@ -905,6 +955,11 @@ namespace HoverTranslate
                 {
                     _card.ShowMessage("光标下没有取到文字", "把鼠标放到文字上，或先选中文字再按快捷键");
                     AutoHide(1400);
+                }
+                else
+                {
+                    // 刚才先占了个「取词中」的位，这里什么都没取到，收掉，别留一张空卡
+                    _card.HideCard(false);
                 }
                 return;
             }
