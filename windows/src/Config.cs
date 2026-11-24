@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Web.Script.Serialization;
@@ -23,6 +24,8 @@ namespace HoverTranslate
         /// <summary>卡片放在光标上方时额外上移的行数，0~4。</summary>
         public int LiftLines { get; set; }
         public string Industry { get; set; }
+        /// <summary>选中的行业/岗位，逗号分隔，可多选；空表示不偏向。</summary>
+        public string Industries { get; set; }
         public string HotkeyTranslate { get; set; }
         public string HotkeySwitch { get; set; }
         public string HotkeyToggle { get; set; }
@@ -41,6 +44,7 @@ namespace HoverTranslate
             CardAnchor = 0;
             LiftLines = 1;
             Industry = "auto";
+            Industries = "";
             DarkTheme = true;
             FontSize = 15;
             // 装好就跟着开机起来，菜单里点一下可以关掉
@@ -109,7 +113,18 @@ namespace HoverTranslate
                     string json = File.ReadAllText(ConfigPath, Encoding.UTF8);
                     var ser = new JavaScriptSerializer();
                     var cfg = ser.Deserialize<AppConfig>(json);
-                    if (cfg != null) return cfg;
+                    if (cfg != null)
+                    {
+                        // 老配置只有单选 Industry，只在这里迁一次；Normalize 每次都跑，
+                        // 放在那里会把用户刚清空的多选又填回来。
+                        if (string.IsNullOrEmpty(cfg.Industries)
+                            && !string.IsNullOrEmpty(cfg.Industry)
+                            && cfg.Industry != "auto")
+                        {
+                            cfg.Industries = cfg.Industry;
+                        }
+                        return cfg;
+                    }
                 }
             }
             catch (Exception ex) { Log("config load: " + ex.Message); }
@@ -153,7 +168,20 @@ namespace HoverTranslate
             if (CardAnchor < 0 || CardAnchor > 2) CardAnchor = 0;
             if (LiftLines < 0) LiftLines = 0;
             if (LiftLines > 4) LiftLines = 4;
-            if (!IndustryTerms.IsKnownAny(Industry)) Industry = "auto";
+            var keep = new List<string>();
+            if (!string.IsNullOrEmpty(Industries))
+            {
+                foreach (string raw in Industries.Split(','))
+                {
+                    string key = raw.Trim();
+                    if (key.Length == 0 || key == "auto") continue;
+                    if (!IndustryTerms.IsKnownAny(key)) continue;
+                    if (!keep.Contains(key)) keep.Add(key);
+                }
+            }
+            Industries = string.Join(",", keep.ToArray());
+            // 旧字段继续保存第一个选中项，给「给当前行业加词条」这类单值逻辑用
+            Industry = keep.Count > 0 ? keep[0] : "auto";
         }
     }
 }
