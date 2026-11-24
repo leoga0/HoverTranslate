@@ -257,15 +257,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sub.removeAllItems()
         industryItems.removeAll()
 
-        for (key, title) in IndustryTerms.domains() {
+        // 行业和岗位各拆成一个二级菜单，主菜单只留两行，点哪组展开哪组
+        let autoItem = NSMenuItem(title: "自动（全部行业与岗位）", action: #selector(setIndustry(_:)), keyEquivalent: "")
+        autoItem.target = self
+        autoItem.representedObject = "auto"
+        autoItem.state = config.industry == "auto" ? .on : .off
+        sub.addItem(autoItem)
+        industryItems.append(autoItem)
+
+        let indGroup = NSMenuItem(title: "行业", action: nil, keyEquivalent: "")
+        indGroup.submenu = NSMenu()
+        let postGroup = NSMenuItem(title: "岗位", action: nil, keyEquivalent: "")
+        postGroup.submenu = NSMenu()
+
+        for (key, title) in IndustryTerms.domains() where key != "auto" {
             let item = NSMenuItem(title: title, action: #selector(setIndustry(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = key
             item.state = config.industry == key ? .on : .off
-            sub.addItem(item)
             industryItems.append(item)
-            if key == "auto" { sub.addItem(NSMenuItem.separator()) }
+            if key.hasPrefix("post-") {
+                postGroup.submenu?.addItem(item)
+            } else {
+                indGroup.submenu?.addItem(item)
+            }
         }
+
+        sub.addItem(indGroup)
+        sub.addItem(postGroup)
 
         sub.addItem(NSMenuItem.separator())
 
