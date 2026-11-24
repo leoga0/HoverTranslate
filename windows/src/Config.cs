@@ -31,7 +31,7 @@ namespace HoverTranslate
         {
             Direction = (int)HoverTranslate.Direction.Auto;
             HoverEnabled = true;
-            HoverDelayMs = 380;
+            HoverDelayMs = 220;
             MaxTextLength = 240;
             ShowOriginal = false;
             QuietMode = true;
@@ -148,7 +148,6 @@ namespace HoverTranslate
             if (string.IsNullOrEmpty(HotkeyTranslate)) HotkeyTranslate = "Ctrl+Alt+T";
             if (string.IsNullOrEmpty(HotkeySwitch)) HotkeySwitch = "Ctrl+Alt+D";
             if (string.IsNullOrEmpty(HotkeyToggle)) HotkeyToggle = "Ctrl+Alt+H";
-            if (HoverDelayMs < 250) HoverDelayMs = 250;
             if (string.IsNullOrEmpty(TargetLang)) TargetLang = "zh";
             if (TargetLang != "zh" && TargetLang != "en" && TargetLang != "both") TargetLang = "zh";
             if (CardAnchor < 0 || CardAnchor > 2) CardAnchor = 0;
