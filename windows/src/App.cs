@@ -458,20 +458,26 @@ namespace HoverTranslate
             _indMenu.DropDownItems.Clear();
             _miIndustry.Clear();
 
-            bool postSepAdded = false;
+            // 行业和岗位加起来二十多项，一次全铺开太长，拆成两个二级菜单，点开哪组看哪组
+            var autoItem = new Forms.ToolStripMenuItem("自动（全部行业与岗位）", null, delegate { SetIndustry("auto"); });
+            _miIndustry["auto"] = autoItem;
+            _indMenu.DropDownItems.Add(autoItem);
+
+            var indGroup = new Forms.ToolStripMenuItem("行业");
+            var postGroup = new Forms.ToolStripMenuItem("岗位");
+
             foreach (string[] domain in IndustryTerms.AllDomains())
             {
                 string key = domain[0];
-                if (!postSepAdded && key.StartsWith("post-", StringComparison.Ordinal))
-                {
-                    _indMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
-                    postSepAdded = true;
-                }
+                if (key == "auto") continue;
                 var item = new Forms.ToolStripMenuItem(domain[1], null, delegate { SetIndustry(key); });
                 _miIndustry[key] = item;
-                _indMenu.DropDownItems.Add(item);
-                if (key == "auto") _indMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
+                if (key.StartsWith("post-", StringComparison.Ordinal)) postGroup.DropDownItems.Add(item);
+                else indGroup.DropDownItems.Add(item);
             }
+
+            _indMenu.DropDownItems.Add(indGroup);
+            _indMenu.DropDownItems.Add(postGroup);
 
             _indMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
             _indMenu.DropDownItems.Add(new Forms.ToolStripMenuItem("新增行业 / 岗位…", null, delegate { AddIndustryInteractive(); }));
