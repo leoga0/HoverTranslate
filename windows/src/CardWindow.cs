@@ -263,6 +263,34 @@ namespace HoverTranslate
 
         // MARK: - 内容
 
+        /// <summary>
+        /// 鼠标停够时间后先把卡片亮出来，八字还没一撇就先告诉用户「在取词」，
+        /// 别让人对着屏幕空等——取词和翻译都可能要几百毫秒。
+        /// </summary>
+        public void ShowPending(int anchorX, int anchorY, string hint)
+        {
+            _anchorX = anchorX;
+            _anchorY = anchorY;
+            _original = "";
+            _translated = "";
+            HasResult = false;
+            _dimmed = false;
+
+            _pair.Text = "";
+            _source.Text = "";
+            _sourceBox.Visibility = Visibility.Collapsed;
+            _target.Text = string.IsNullOrEmpty(hint) ? "取词中…" : hint;
+            _target.Visibility = Visibility.Visible;
+            _target.Foreground = _dark
+                ? new SolidColorBrush(Color.FromArgb(140, 200, 210, 230))
+                : new SolidColorBrush(Color.FromRgb(130, 136, 148));
+            _footer.Text = "";
+            _footer.Visibility = Visibility.Collapsed;
+            ShowTerms(null);
+
+            Present();
+        }
+
         public void ShowLoading(string source, string pair, int anchorX, int anchorY, bool showSource)
         {
             _anchorX = anchorX;
